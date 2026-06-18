@@ -1,0 +1,82 @@
+# lib-agent-cli
+
+The shared **CLI runtime** for agent-first command-line tools: the copied
+cobra scaffolding and credential plumbing that every `agent-*` tool reimplements
+by hand.
+
+Where [`lib-agent-output`](https://github.com/shhac/lib-agent-output) is the
+zero-dependency **wire contract** (NDJSON, errors, pagination), `lib-agent-cli`
+is the **runtime around it** — the root command, the persistent flags, the
+config/credential storage. It depends on `lib-agent-output`, cobra, and the
+standard library.
+
+A survey of the family showed this layer is even more copied than the output
+layer: the XDG config-dir resolver is byte-identical across tools, the macOS
+keychain invocation is identical down to the flags, and the cobra root setup is
+~95% the same. This module is the single home for it.
+
+## Packages
+
+| Package | What it provides |
+|---|---|
+| [`creds`](creds) | `ConfigDir(app)` (XDG), `Store` (0600 JSON load/save), `Keychain` (macOS `security` wrapper), `FirstNonEmpty`/`Getenv` resolution helpers |
+| [`cli`](cli) | `NewRoot(Options)` (cobra root with shared flags + `--format` validation), `HandleUnknownCommand`, `Run` (execute + structured error + exit) |
+
+The CLI supplies the **domain inputs** — app name, keychain service, env-var
+names, domain flags, credential schema — and this module owns the **mechanism**.
+Nothing here knows about any specific API.
+
+## Quick start
+
+```go
+package main
+
+import (
+    "path/filepath"
+
+    "github.com/shhac/lib-agent-cli/cli"
+    "github.com/shhac/lib-agent-cli/creds"
+    output "github.com/shhac/lib-agent-output"
+)
+
+func main() {
+    g := &cli.Globals{}
+    root := cli.NewRoot(cli.Options{
+        Use: "agent-foo", Short: "Foo CLI for agents", Version: version,
+        Globals: g, DefaultFormat: output.FormatNDJSON,
+        UnknownHint: "run 'agent-foo --help'",
+    })
+    // add domain persistent flags + subcommands to root …
+    cli.Run(root)
+}
+
+// credentials, stored 0600 under the XDG config dir, secret in the keychain:
+store := creds.Store{Path: filepath.Join(creds.ConfigDir("agent-foo"), "credentials.json")}
+kc := creds.NewKeychain("app.paulie.agent-foo")
+```
+
+See [`examples/demo`](examples/demo) for a complete tiny CLI (also the e2e smoke
+test).
+
+## Scope
+
+This is the first cut: the **settled, byte-identical** pieces (`creds` + the
+`cli` root builder). A secret-entry **`dialog`** package (native OS prompt via
+zenity, so tokens never transit argv) is planned but deferred — see
+[`design-docs/design.md`](design-docs/design.md), which also records the
+shared-vs-domain boundary for every piece and what deliberately stays in each
+CLI (parse-curl, browser import, token formats, retry/backoff, truncation).
+
+## Develop
+
+```sh
+go test ./...
+go vet ./...
+```
+
+Depends on the published `github.com/shhac/lib-agent-output`. See
+[`AGENTS.md`](AGENTS.md).
+
+## License
+
+[PolyForm Noncommercial License 1.0.0](LICENSE) — © 2026 Paul Somers.
