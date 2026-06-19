@@ -100,6 +100,30 @@ func TestKeychainSetErrorIncludesDiagnostic(t *testing.T) {
 
 var errBoom = errors.New("exit status 1")
 
+func TestKeychainDeleteAllLoopsUntilEmpty(t *testing.T) {
+	k := NewKeychain("app.paulie.test")
+	if !k.Available() {
+		t.Skip("keychain is macOS-only")
+	}
+	calls := 0
+	k.run = func(args ...string) (string, error) {
+		if args[0] != "delete-generic-password" {
+			t.Fatalf("unexpected call %v", args)
+		}
+		calls++
+		if calls <= 3 { // 3 items, then security reports empty
+			return "", nil
+		}
+		return "security: could not be found", errBoom
+	}
+	if err := k.DeleteAll(); err != nil {
+		t.Fatalf("DeleteAll = %v", err)
+	}
+	if calls != 4 {
+		t.Errorf("DeleteAll made %d calls, want 4 (3 deletes + terminating miss)", calls)
+	}
+}
+
 func TestFirstNonEmptyAndGetenv(t *testing.T) {
 	if got := FirstNonEmpty("", "", "x", "y"); got != "x" {
 		t.Errorf("FirstNonEmpty = %q", got)

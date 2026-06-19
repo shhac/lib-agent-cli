@@ -75,6 +75,22 @@ func (k *Keychain) Delete(account string) error {
 	return nil
 }
 
+// DeleteAll removes every secret stored under the service, including accounts
+// the caller doesn't track (orphans). The `security` CLI deletes one matching
+// item per call, so this loops until none remain (it reports an error once the
+// service is empty, which is the expected terminator). macOS only; returns
+// ErrKeychainUnavailable elsewhere.
+func (k *Keychain) DeleteAll() error {
+	if !k.Available() {
+		return ErrKeychainUnavailable
+	}
+	for {
+		if _, err := k.run("delete-generic-password", "-s", k.Service); err != nil {
+			return nil
+		}
+	}
+}
+
 // keychainErr builds a descriptive error from a failed `security` call,
 // folding in the tool's own diagnostic when it printed one.
 func keychainErr(op, service, account, out string, err error) error {
