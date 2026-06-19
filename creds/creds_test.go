@@ -107,3 +107,24 @@ func TestFirstNonEmptyAndGetenv(t *testing.T) {
 		t.Errorf("Getenv = %q", got)
 	}
 }
+
+func TestCacheDir(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", "/cache")
+	if got := CacheDir("agent-foo"); got != "/cache/agent-foo" {
+		t.Errorf("CacheDir = %q, want /cache/agent-foo", got)
+	}
+	t.Setenv("XDG_CACHE_HOME", "")
+	home, _ := os.UserHomeDir()
+	if got := CacheDir("agent-foo"); got != filepath.Join(home, ".cache", "agent-foo") {
+		t.Errorf("CacheDir default = %q", got)
+	}
+}
+
+func TestFirstNonZero(t *testing.T) {
+	if got := FirstNonZero(0, 0, 7, 9); got != 7 {
+		t.Errorf("FirstNonZero = %d, want 7", got)
+	}
+	if got := FirstNonZero(0, 0); got != 0 {
+		t.Errorf("FirstNonZero all-zero = %d, want 0", got)
+	}
+}

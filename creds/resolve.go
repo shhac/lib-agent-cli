@@ -25,3 +25,15 @@ func Getenv(names ...string) string {
 	}
 	return ""
 }
+
+// FirstNonZero returns the first non-zero int, or 0 if all are zero — the int
+// analog of FirstNonEmpty for numeric precedence (flag > global > config), where
+// 0 means "unset" (e.g. timeouts, page sizes, byte caps).
+func FirstNonZero(vals ...int) int {
+	for _, v := range vals {
+		if v != 0 {
+			return v
+		}
+	}
+	return 0
+}

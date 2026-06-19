@@ -1,6 +1,6 @@
 // Package creds is the credential/config plumbing shared by agent-first CLIs:
-// XDG config-dir resolution, a 0600 JSON store, a macOS keychain wrapper, and
-// small resolution helpers.
+// XDG config/cache-dir resolution, a 0600 JSON store, a macOS keychain wrapper,
+// and small resolution helpers.
 //
 // The split is deliberate: this package owns the *mechanism* (where files live,
 // how secrets are stored, the resolution order), while the CLI supplies the
@@ -13,25 +13,48 @@ import (
 	"path/filepath"
 )
 
-var overrideBase string
+var (
+	configOverride string
+	cacheOverride  string
+)
 
 // SetConfigBaseForTest overrides the config base directory (the parent of the
 // per-app directory) for the duration of a test and returns a restore func.
 func SetConfigBaseForTest(dir string) func() {
-	prev := overrideBase
-	overrideBase = dir
-	return func() { overrideBase = prev }
+	prev := configOverride
+	configOverride = dir
+	return func() { configOverride = prev }
+}
+
+// SetCacheBaseForTest overrides the cache base directory for the duration of a
+// test and returns a restore func.
+func SetCacheBaseForTest(dir string) func() {
+	prev := cacheOverride
+	cacheOverride = dir
+	return func() { cacheOverride = prev }
 }
 
 // ConfigDir returns the per-app config directory: $XDG_CONFIG_HOME/<app> when
-// XDG_CONFIG_HOME is set, otherwise ~/.config/<app>.
+// set, otherwise ~/.config/<app>. Use it for state you keep — credentials,
+// settings.
 func ConfigDir(app string) string {
-	if overrideBase != "" {
-		return filepath.Join(overrideBase, app)
+	return xdgDir(configOverride, "XDG_CONFIG_HOME", ".config", app)
+}
+
+// CacheDir returns the per-app cache directory: $XDG_CACHE_HOME/<app> when set,
+// otherwise ~/.cache/<app>. Use it for data you can regenerate — warmed
+// lookups, downloads — and never for secrets.
+func CacheDir(app string) string {
+	return xdgDir(cacheOverride, "XDG_CACHE_HOME", ".cache", app)
+}
+
+func xdgDir(override, env, homeSubdir, app string) string {
+	if override != "" {
+		return filepath.Join(override, app)
 	}
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, app)
+	if dir := os.Getenv(env); dir != "" {
+		return filepath.Join(dir, app)
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", app)
+	return filepath.Join(home, homeSubdir, app)
 }
