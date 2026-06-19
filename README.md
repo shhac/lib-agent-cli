@@ -87,4 +87,4 @@ Depends on the published `github.com/shhac/lib-agent-output`. See
 
 ## License
 
-[PolyForm Noncommercial License 1.0.0](LICENSE) — © 2026 Paul Somers.
+[PolyForm Perimeter License 1.0.0](LICENSE) — © 2026 Paul Somers.
