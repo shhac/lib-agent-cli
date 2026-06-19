@@ -19,7 +19,7 @@ keychain invocation is identical down to the flags, and the cobra root setup is
 
 | Package | What it provides |
 |---|---|
-| [`creds`](creds) | `ConfigDir`/`CacheDir` (XDG), `Store` (0600 JSON load/save), `Keychain` (macOS `security` wrapper), `FirstNonEmpty`/`FirstNonZero`/`Getenv` resolution helpers |
+| [`creds`](creds) | freedesktop XDG dirs — `ConfigDir`/`CacheDir`/`DataDir`/`StateDir`/`RuntimeDir` (+ an `App` bundle: one identity → all paths + keychain), `Store` (0600 JSON load/save), `Keychain` (macOS `security` wrapper), `FirstNonEmpty`/`FirstNonZero`/`Getenv` |
 | [`cli`](cli) | `NewRoot(Options)` (cobra root with shared flags + `--format` validation), `ConfigCommand(keys)` (`get`/`set`/`unset`/`list`), `RequireConfirm`/`AddConfirmFlag` (the `--yes` gate), `HandleUnknownCommand`, `Run` |
 | [`dialog`](dialog) | the `--form` boilerplate: `PromptSecret`/`Prompt` (native OS secret dialog via zenity, so tokens never touch argv) + `Available` (graceful headless fallback) |
 

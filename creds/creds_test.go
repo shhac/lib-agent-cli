@@ -128,3 +128,46 @@ func TestFirstNonZero(t *testing.T) {
 		t.Errorf("FirstNonZero all-zero = %d, want 0", got)
 	}
 }
+
+func TestDataAndStateDir(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "/data")
+	t.Setenv("XDG_STATE_HOME", "/state")
+	if got := DataDir("agent-foo"); got != "/data/agent-foo" {
+		t.Errorf("DataDir = %q", got)
+	}
+	if got := StateDir("agent-foo"); got != "/state/agent-foo" {
+		t.Errorf("StateDir = %q", got)
+	}
+	t.Setenv("XDG_DATA_HOME", "")
+	home, _ := os.UserHomeDir()
+	if got := DataDir("agent-foo"); got != filepath.Join(home, ".local/share", "agent-foo") {
+		t.Errorf("DataDir default = %q", got)
+	}
+}
+
+func TestRuntimeDir(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1000")
+	got, err := RuntimeDir("agent-foo")
+	if err != nil || got != "/run/user/1000/agent-foo" {
+		t.Errorf("RuntimeDir = %q, %v", got, err)
+	}
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	if _, err := RuntimeDir("agent-foo"); err == nil {
+		t.Error("RuntimeDir should error when XDG_RUNTIME_DIR is unset")
+	}
+}
+
+func TestApp(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/cfg")
+	t.Setenv("XDG_CACHE_HOME", "/cache")
+	app := App{Name: "agent-foo", KeychainService: "app.paulie.agent-foo"}
+	if app.ConfigDir() != "/cfg/agent-foo" {
+		t.Errorf("App.ConfigDir = %q", app.ConfigDir())
+	}
+	if app.CacheDir() != "/cache/agent-foo" {
+		t.Errorf("App.CacheDir = %q", app.CacheDir())
+	}
+	if app.Keychain().Service != "app.paulie.agent-foo" {
+		t.Errorf("App.Keychain().Service = %q", app.Keychain().Service)
+	}
+}

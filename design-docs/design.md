@@ -51,7 +51,7 @@ field-selection is domain).
 lib-agent-output   (zero-dep wire contract: NDJSON, Error/FixableBy, Format, Pagination)
         ▲
 lib-agent-cli      (cobra + creds runtime; MAY have deps)
-   ├─ creds : ConfigDir/CacheDir, Store (0600), Keychain, FirstNonEmpty/FirstNonZero/Getenv
+   ├─ creds : XDG ConfigDir/CacheDir/DataDir/StateDir/RuntimeDir (+ App bundle), Store (0600), Keychain, FirstNonEmpty/FirstNonZero/Getenv
    ├─ cli   : NewRoot(Options)+Globals, ConfigCommand, RequireConfirm, HandleUnknownCommand, Run
    └─ dialog: PromptSecret/Prompt/Available (the --form secret dialog)
 ```
