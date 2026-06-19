@@ -16,9 +16,10 @@ import (
 
 // Field is one input in a form.
 type Field struct {
-	ID     string // key in the returned map
-	Label  string // prompt shown to the user
-	Hidden bool   // mask the input (tokens, passwords, cookies)
+	ID      string // key in the returned map
+	Label   string // prompt shown to the user
+	Hidden  bool   // mask the input (tokens, passwords, cookies)
+	Initial string // pre-filled value (e.g. an existing token to edit); optional
 }
 
 // Spec is a titled form of one or more fields.
@@ -35,6 +36,9 @@ func zenityPromptOne(ctx context.Context, title string, f Field) (string, error)
 	opts := []zenity.Option{zenity.Title(title), zenity.Context(ctx)}
 	if f.Hidden {
 		opts = append(opts, zenity.HideText())
+	}
+	if f.Initial != "" {
+		opts = append(opts, zenity.EntryText(f.Initial))
 	}
 	return zenity.Entry(f.Label, opts...)
 }

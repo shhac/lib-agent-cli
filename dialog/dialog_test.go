@@ -40,6 +40,25 @@ func TestPromptMapsFieldsByID(t *testing.T) {
 	}
 }
 
+func TestPromptPassesInitialToBackend(t *testing.T) {
+	forceAvailable(t)
+	var gotInitial string
+	withBackend(t, func(_ context.Context, _ string, f Field) (string, error) {
+		gotInitial = f.Initial
+		return f.Initial, nil
+	})
+
+	res, err := Prompt(context.Background(), Spec{Title: "t", Fields: []Field{
+		{ID: "token", Label: "Token", Hidden: true, Initial: "pre-filled"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotInitial != "pre-filled" || res["token"] != "pre-filled" {
+		t.Errorf("Initial not threaded: gotInitial=%q res=%v", gotInitial, res)
+	}
+}
+
 func TestPromptSecretIsHiddenSingleField(t *testing.T) {
 	forceAvailable(t)
 	withBackend(t, func(_ context.Context, _ string, f Field) (string, error) {
