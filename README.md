@@ -19,7 +19,8 @@ keychain invocation is identical down to the flags, and the cobra root setup is
 
 | Package | What it provides |
 |---|---|
-| [`creds`](creds) | freedesktop XDG dirs — `ConfigDir`/`CacheDir`/`DataDir`/`StateDir`/`RuntimeDir` (+ an `App` bundle: one identity → all paths + keychain), `Store` (0600 JSON load/save), `Keychain` (macOS `security` wrapper), `FirstNonEmpty`/`FirstNonZero`/`Getenv` |
+| [`xdg`](xdg) | freedesktop base dirs — `ConfigDir`/`CacheDir`/`DataDir`/`StateDir`/`RuntimeDir` with spec env vars + sensible fallbacks when unset (+ an `App{Name}` bundle: one identity → all paths) |
+| [`creds`](creds) | secret plumbing — `Store` (0600 JSON load/save), `Keychain` (macOS `security` wrapper), `FirstNonEmpty`/`FirstNonZero`/`Getenv` value resolvers |
 | [`cli`](cli) | `NewRoot(Options)` (cobra root with shared flags + `--format` validation), `ConfigCommand(keys)` (`get`/`set`/`unset`/`list`), `RequireConfirm`/`AddConfirmFlag` (the `--yes` gate), `HandleUnknownCommand`, `Run` |
 | [`dialog`](dialog) | the `--form` boilerplate: `PromptSecret`/`Prompt` (native OS secret dialog via zenity, so tokens never touch argv) + `Available` (graceful headless fallback) |
 
@@ -37,6 +38,7 @@ import (
 
     "github.com/shhac/lib-agent-cli/cli"
     "github.com/shhac/lib-agent-cli/creds"
+    "github.com/shhac/lib-agent-cli/xdg"
     output "github.com/shhac/lib-agent-output"
 )
 
@@ -52,7 +54,7 @@ func main() {
 }
 
 // credentials, stored 0600 under the XDG config dir, secret in the keychain:
-store := creds.Store{Path: filepath.Join(creds.ConfigDir("agent-foo"), "credentials.json")}
+store := creds.Store{Path: filepath.Join(xdg.ConfigDir("agent-foo"), "credentials.json")}
 kc := creds.NewKeychain("app.paulie.agent-foo")
 ```
 
@@ -65,12 +67,13 @@ contract).
 
 ## Scope
 
-`creds`, the `cli` root builder, and `dialog` (the `--form` secret-entry
-boilerplate) — the settled pieces that are copied across the family. The
-[`design-docs/design.md`](design-docs/design.md) records the shared-vs-domain
-boundary for every piece and what deliberately stays in each CLI (parse-curl,
-browser import, token formats, retry/backoff, truncation). A `redact` mechanism
-remains deferred (below the rule of three for now).
+`xdg` (filesystem locations), `creds` (secrets), the `cli` root builder, and
+`dialog` (the `--form` secret-entry boilerplate) — the settled pieces that are
+copied across the family. The [`design-docs/design.md`](design-docs/design.md)
+records the shared-vs-domain boundary for every piece and what deliberately
+stays in each CLI (parse-curl, browser import, token formats, retry/backoff,
+truncation). Redaction is a wire-shape concern and lives in `lib-agent-output`
+(`output.Redact`).
 
 ## Develop
 

@@ -18,7 +18,8 @@ survey it came from, and the shared-vs-domain boundary per piece.
 
 | Path | Responsibility |
 |---|---|
-| `creds/` | XDG `ConfigDir`/`CacheDir`/`DataDir`/`StateDir`/`RuntimeDir` (+ `App` bundle), `Store` (0600 JSON), `Keychain` (macOS `security`), `FirstNonEmpty`/`FirstNonZero`/`Getenv` |
+| `xdg/` | freedesktop dirs `ConfigDir`/`CacheDir`/`DataDir`/`StateDir`/`RuntimeDir` (spec env vars + fallbacks when unset) (+ `App{Name}` bundle) |
+| `creds/` | `Store` (0600 JSON), `Keychain` (macOS `security`), `FirstNonEmpty`/`FirstNonZero`/`Getenv` |
 | `cli/` | `NewRoot`+`Options`/`Globals`, `ConfigCommand`, `RequireConfirm`/`AddConfirmFlag`, `HandleUnknownCommand`, `Run` |
 | `dialog/` | `PromptSecret`/`Prompt`/`Available` — the `--form` native secret dialog (zenity) |
 | `examples/demo/` | the kitchen-sink CLI exercising every package; built + driven by `demo_test.go` |

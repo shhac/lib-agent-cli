@@ -14,6 +14,7 @@ import (
 	"github.com/shhac/lib-agent-cli/cli"
 	"github.com/shhac/lib-agent-cli/creds"
 	"github.com/shhac/lib-agent-cli/dialog"
+	"github.com/shhac/lib-agent-cli/xdg"
 	output "github.com/shhac/lib-agent-output"
 	"github.com/spf13/cobra"
 )
@@ -26,7 +27,7 @@ type settings struct {
 }
 
 func settingsStore() creds.Store {
-	return creds.Store{Path: filepath.Join(creds.ConfigDir(appName), "config.json")}
+	return creds.Store{Path: filepath.Join(xdg.ConfigDir(appName), "config.json")}
 }
 
 func loadSettings() settings {
@@ -199,8 +200,8 @@ func dirsCmd() *cobra.Command {
 		Short: "Show the config and cache directories",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return output.NewNDJSONWriter(os.Stdout).WriteItem(map[string]any{
-				"config_dir": creds.ConfigDir(appName),
-				"cache_dir":  creds.CacheDir(appName),
+				"config_dir": xdg.ConfigDir(appName),
+				"cache_dir":  xdg.CacheDir(appName),
 			})
 		},
 	}

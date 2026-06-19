@@ -20,7 +20,7 @@ get green, then come here.
 
 | Your code | `lib-agent-cli` |
 |---|---|
-| `configBase()` / `ConfigDir()` XDG logic | `creds.ConfigDir(app)` |
+| `configBase()` / `ConfigDir()` XDG logic | `xdg.ConfigDir(app)` (also `Cache`/`Data`/`State`/`RuntimeDir`) |
 | credential/config file load+save (`0600` JSON) | `creds.Store{Path}.Load/Save` |
 | macOS keychain `security` wrapper | `creds.NewKeychain(service)` (`Get`/`Set`/`Delete`/`Available`) |
 | `firstNonEmpty(...)` resolution helper | `creds.FirstNonEmpty(...)`, `creds.Getenv(names...)` |
@@ -63,9 +63,12 @@ the judgment calls are the four gotchas below.
 Replace your config-dir + file store + keychain:
 
 ```go
-import "github.com/shhac/lib-agent-cli/creds"
+import (
+	"github.com/shhac/lib-agent-cli/creds"
+	"github.com/shhac/lib-agent-cli/xdg"
+)
 
-store := creds.Store{Path: filepath.Join(creds.ConfigDir("agent-foo"), "credentials.json")}
+store := creds.Store{Path: filepath.Join(xdg.ConfigDir("agent-foo"), "credentials.json")}
 var c Credentials                 // YOUR schema stays
 _ = store.Load(&c)                // missing file → empty, no error
 // …mutate c…

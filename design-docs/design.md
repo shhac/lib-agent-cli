@@ -32,7 +32,7 @@ CLI.
 
 | Shared (here) | Domain (stays in the CLI) |
 |---|---|
-| XDG `ConfigDir(app)` | the app name |
+| XDG `ConfigDir(app)` (in `xdg`, with spec env vars + fallbacks) | the app name |
 | `Store` (0600 JSON load/save) | the credential schema |
 | `Keychain` (`security` wrapper) | the service name, the placeholder strategy |
 | `FirstNonEmpty`/`Getenv` resolution helpers | which env-var names, the profile/workspace model |
@@ -51,7 +51,8 @@ field-selection is domain).
 lib-agent-output   (zero-dep wire contract: NDJSON, Error/FixableBy, Format, Pagination)
         ▲
 lib-agent-cli      (cobra + creds runtime; MAY have deps)
-   ├─ creds : XDG ConfigDir/CacheDir/DataDir/StateDir/RuntimeDir (+ App bundle), Store (0600), Keychain, FirstNonEmpty/FirstNonZero/Getenv
+   ├─ xdg   : ConfigDir/CacheDir/DataDir/StateDir/RuntimeDir (spec env + fallbacks) (+ App bundle)
+   ├─ creds : Store (0600), Keychain, FirstNonEmpty/FirstNonZero/Getenv
    ├─ cli   : NewRoot(Options)+Globals, ConfigCommand, RequireConfirm, HandleUnknownCommand, Run
    └─ dialog: PromptSecret/Prompt/Available (the --form secret dialog)
 ```
