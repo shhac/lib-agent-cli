@@ -2,6 +2,7 @@ package creds
 
 import (
 	"errors"
+	"fmt"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -25,8 +26,11 @@ func NewKeychain(service string) *Keychain {
 	return &Keychain{Service: service, run: runSecurity}
 }
 
+// runSecurity invokes the macOS `security` CLI. It uses CombinedOutput so the
+// tool's diagnostic (which it writes to stderr) is captured and can be surfaced
+// in error messages instead of being discarded.
 func runSecurity(args ...string) (string, error) {
-	out, err := exec.Command("security", args...).Output()
+	out, err := exec.Command("security", args...).CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
 
@@ -45,20 +49,37 @@ func (k *Keychain) Get(account string) (string, bool) {
 	return v, true
 }
 
-// Set stores secret for account, replacing any existing entry.
+// Set stores secret for account, replacing any existing entry. On failure the
+// error includes the `security` diagnostic and the service/account context.
 func (k *Keychain) Set(account, secret string) error {
 	if !k.Available() {
 		return ErrKeychainUnavailable
 	}
-	_, err := k.run("add-generic-password", "-s", k.Service, "-a", account, "-w", secret, "-U")
-	return err
+	out, err := k.run("add-generic-password", "-s", k.Service, "-a", account, "-w", secret, "-U")
+	if err != nil {
+		return keychainErr("store secret", k.Service, account, out, err)
+	}
+	return nil
 }
 
-// Delete removes the secret for account.
+// Delete removes the secret for account. On failure the error includes the
+// `security` diagnostic and the service/account context.
 func (k *Keychain) Delete(account string) error {
 	if !k.Available() {
 		return ErrKeychainUnavailable
 	}
-	_, err := k.run("delete-generic-password", "-s", k.Service, "-a", account)
-	return err
+	out, err := k.run("delete-generic-password", "-s", k.Service, "-a", account)
+	if err != nil {
+		return keychainErr("delete secret", k.Service, account, out, err)
+	}
+	return nil
+}
+
+// keychainErr builds a descriptive error from a failed `security` call,
+// folding in the tool's own diagnostic when it printed one.
+func keychainErr(op, service, account, out string, err error) error {
+	if out != "" {
+		return fmt.Errorf("keychain: %s for %q (service %q): %w: %s", op, account, service, err, out)
+	}
+	return fmt.Errorf("keychain: %s for %q (service %q): %w", op, account, service, err)
 }

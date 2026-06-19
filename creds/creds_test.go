@@ -1,8 +1,10 @@
 package creds
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -71,6 +73,32 @@ func TestKeychainViaInjectedRun(t *testing.T) {
 		t.Errorf("Set args = %v", lastArgs)
 	}
 }
+
+func TestKeychainSetErrorIncludesDiagnostic(t *testing.T) {
+	k := NewKeychain("app.paulie.test")
+	if !k.Available() {
+		t.Skip("keychain is macOS-only")
+	}
+	k.run = func(args ...string) (string, error) {
+		return "security: SecKeychainItemCreateFromContent: write permission denied", errBoom
+	}
+	err := k.Set("acct", "s")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	msg := err.Error()
+	// the security diagnostic, the account, and the service should all surface
+	for _, want := range []string{"write permission denied", "acct", "app.paulie.test"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error %q missing %q", msg, want)
+		}
+	}
+	if !errors.Is(err, errBoom) {
+		t.Error("wrapped error should preserve the underlying cause")
+	}
+}
+
+var errBoom = errors.New("exit status 1")
 
 func TestFirstNonEmptyAndGetenv(t *testing.T) {
 	if got := FirstNonEmpty("", "", "x", "y"); got != "x" {
