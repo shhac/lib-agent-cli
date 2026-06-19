@@ -20,7 +20,8 @@ survey it came from, and the shared-vs-domain boundary per piece.
 |---|---|
 | `creds/` | `ConfigDir`, `Store` (0600 JSON), `Keychain` (macOS `security`), `FirstNonEmpty`/`Getenv` |
 | `cli/` | `NewRoot`, `Options`/`Globals`, `HandleUnknownCommand`, `Run` |
-| `examples/demo/` | a complete tiny CLI; the e2e smoke test |
+| `dialog/` | `PromptSecret`/`Prompt`/`Available` — the `--form` native secret dialog (zenity) |
+| `examples/demo/` | a complete tiny CLI (incl. `login --form`); the e2e smoke test |
 
 ## Build, test, verify
 
@@ -47,7 +48,10 @@ here.
 - **Code style**: early returns; self-documenting code; comments explain *why*.
 - **Security-sensitive surface.** `creds` is the one audited place for `0600`
   permissions and keychain handling — don't loosen them, and don't add a path
-  that writes secrets to a world-readable file or to argv.
+  that writes secrets to a world-readable file or to argv. `dialog` exists so a
+  token never has to transit argv at all (`--form` → native prompt); keep that
+  invariant, and keep `Available()` returning a structured error (not a panic)
+  on headless hosts.
 - **Keychain is injectable.** `Keychain.run` is overridable so tests never touch
   the real keychain; keep it that way. `Available()` gates on `runtime.GOOS`.
 - **Depends on lib-agent-output** (published tag in `go.mod`). The error/format

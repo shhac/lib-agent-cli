@@ -53,7 +53,7 @@ lib-agent-output   (zero-dep wire contract: NDJSON, Error/FixableBy, Format, Pag
 lib-agent-cli      (cobra + creds runtime; MAY have deps)
    ├─ creds : ConfigDir, Store (0600), Keychain, FirstNonEmpty/Getenv
    ├─ cli   : NewRoot(Options)+Globals, HandleUnknownCommand, Run
-   └─ dialog: PromptSecret (planned — see below)
+   └─ dialog: PromptSecret/Prompt/Available (the --form secret dialog)
 ```
 
 `lib-agent-cli` depends on the **published** `lib-agent-output` tag, so a tool
@@ -61,18 +61,21 @@ that adopts both deletes its `internal/output/`, `internal/errors/`,
 `internal/credential/`, `internal/config/` path logic, and most of
 `internal/cli/root.go`.
 
-## Scope of v0.1.0 (this cut) and what's deferred
+## Scope and what's deferred
 
-**In:** `creds` and the `cli` root builder — the byte-identical, fully testable,
-dependency-light pieces (deps: cobra + lib-agent-output only).
+**In:** `creds`, the `cli` root builder, and `dialog` — the settled pieces
+copied across the family.
 
-**Deferred — `dialog` (secret entry via native OS prompt):** slack/posthog use a
-plain `zenity.Entry`; cloudflare uses a richer multi-field `Prompter`/`Spec` with
-SSH/DISPLAY availability checks. The abstraction hasn't converged, and adding
-zenity pulls a dependency that pure-`creds` consumers shouldn't inherit — so it
-waits until (a) the shape settles against a real migration and (b) we decide
-whether it's a sub-package or its own module. The contract it must keep:
-**secrets never transit argv**.
+**`dialog` (secret entry via native OS prompt) — the `--form` boilerplate.**
+slack/posthog use a plain single `zenity.Entry`; cloudflare uses a richer
+multi-field `Prompter`/`Spec` with SSH/DISPLAY availability checks. Rather than
+defer on "hasn't converged," we **took the superset**: a multi-field `Spec`
+(slack's xoxc+xoxd genuinely needs two fields) with a single-secret
+`PromptSecret` convenience on top, plus a structured `Available()` headless
+check. The zenity dependency is acceptable here — `lib-agent-cli` is the
+runtime lib and already carries cobra; a `creds`-only consumer that never
+imports `dialog` doesn't compile zenity into its binary. The load-bearing
+contract: **a secret never transits argv** — `--form` pops the prompt instead.
 
 **Deferred — `redact`:** the redaction *mechanism* (tree-walk + `@redacted` +
 `--expose`) is shareable with a CLI-supplied `shouldRedact` predicate, but only

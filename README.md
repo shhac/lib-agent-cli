@@ -21,6 +21,7 @@ keychain invocation is identical down to the flags, and the cobra root setup is
 |---|---|
 | [`creds`](creds) | `ConfigDir(app)` (XDG), `Store` (0600 JSON load/save), `Keychain` (macOS `security` wrapper), `FirstNonEmpty`/`Getenv` resolution helpers |
 | [`cli`](cli) | `NewRoot(Options)` (cobra root with shared flags + `--format` validation), `HandleUnknownCommand`, `Run` (execute + structured error + exit) |
+| [`dialog`](dialog) | the `--form` boilerplate: `PromptSecret`/`Prompt` (native OS secret dialog via zenity, so tokens never touch argv) + `Available` (graceful headless fallback) |
 
 The CLI supplies the **domain inputs** — app name, keychain service, env-var
 names, domain flags, credential schema — and this module owns the **mechanism**.
@@ -60,12 +61,12 @@ test).
 
 ## Scope
 
-This is the first cut: the **settled, byte-identical** pieces (`creds` + the
-`cli` root builder). A secret-entry **`dialog`** package (native OS prompt via
-zenity, so tokens never transit argv) is planned but deferred — see
-[`design-docs/design.md`](design-docs/design.md), which also records the
-shared-vs-domain boundary for every piece and what deliberately stays in each
-CLI (parse-curl, browser import, token formats, retry/backoff, truncation).
+`creds`, the `cli` root builder, and `dialog` (the `--form` secret-entry
+boilerplate) — the settled pieces that are copied across the family. The
+[`design-docs/design.md`](design-docs/design.md) records the shared-vs-domain
+boundary for every piece and what deliberately stays in each CLI (parse-curl,
+browser import, token formats, retry/backoff, truncation). A `redact` mechanism
+remains deferred (below the rule of three for now).
 
 ## Develop
 
