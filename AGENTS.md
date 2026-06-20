@@ -13,6 +13,8 @@ dialog lib).
 
 Read [`design-docs/design.md`](design-docs/design.md) for the rationale, the
 survey it came from, and the shared-vs-domain boundary per piece.
+[`GETTING_STARTED.md`](GETTING_STARTED.md) builds a new CLI from scratch;
+[`MIGRATION_HELP.md`](MIGRATION_HELP.md) retrofits an existing one.
 
 ## Layout
 

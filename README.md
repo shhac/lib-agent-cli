@@ -62,6 +62,9 @@ kc := creds.NewKeychain("app.paulie.agent-foo")
 See [`examples/demo`](examples/demo) for a complete tiny CLI (also the e2e smoke
 test).
 
+**Building a new CLI from scratch?** [`GETTING_STARTED.md`](GETTING_STARTED.md)
+is the from-scratch tutorial — empty directory to a working agent-first CLI.
+
 **Migrating an existing CLI?** [`MIGRATION_HELP.md`](MIGRATION_HELP.md) is the
 step-by-step guide (companion to `lib-agent-output`'s, which covers the output
 contract).
