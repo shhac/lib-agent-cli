@@ -125,7 +125,10 @@ func loginCmd() *cobra.Command {
 			if form, _ := cmd.Flags().GetBool("form"); form {
 				t, err := dialog.PromptSecret(cmd.Context(), "demo: "+args[0], "API token")
 				if err != nil {
-					return err
+					// The host maps the dialog's neutral Category onto its own
+					// fixable_by envelope — dialog stays free of lib-agent-output.
+					cat, hint := dialog.ClassifyError(err)
+					return output.Wrap(err, output.FixableBy(string(cat))).WithHint(hint)
 				}
 				token = t
 			}

@@ -1,95 +1,185 @@
-// Package dialog prompts for secrets via a native OS dialog, so a token never
-// transits argv or the agent's conversation — the boilerplate behind a `--form`
-// flag. It uses ncruces/zenity (osascript on macOS, zenity/kdialog on Linux,
-// the native API on Windows) and refuses gracefully, with a structured error,
-// when no GUI is reachable (e.g. a headless SSH session).
+// Package dialog provides a small abstraction over native OS dialogs for
+// LLM-safe credential entry. The LLM driving the CLI never sees what the
+// user types — input goes directly into the OS, and only a redacted
+// receipt comes back over stdout.
+//
+// # Usage
+//
+// Callers use the package-level [Default] Prompter. Tests can swap it
+// via [SetDefault] and restore in t.Cleanup.
+//
+// # Backend
+//
+// The default backend wraps github.com/ncruces/zenity. It is the only
+// place this package depends on zenity — sibling projects can replace
+// the default with their own [Prompter] (e.g. a Win32 native popup, a
+// localhost browser form, or a stub) without touching anything else.
+//
+// # Availability contract
+//
+// [Prompter.Available] returns nil when a GUI dialog can plausibly be
+// shown. It returns an error wrapping [ErrNoGUI] when the host is
+// clearly headless (no display server, no SSH local-terminal hint, no
+// interactive Windows session) and an error wrapping [ErrUnsupported]
+// on platforms with no implementation. Available is best-effort — when
+// it cannot pre-classify, it returns nil and lets the dialog itself
+// surface a platform-specific error from [Prompter.Prompt].
+//
+// # Error classification
+//
+// [ClassifyError] maps Prompter errors onto a neutral [Category] +
+// hint string. Sibling projects plug this into their own error envelope
+// (e.g. {"error": err.Error(), "fixable_by": cat, "hint": hint}) without
+// re-deriving the sentinel→category mapping. This package deliberately
+// stays free of host-application types (it does not import the
+// lib-agent-output contract) so it drops into any sibling unchanged.
 package dialog
 
 import (
 	"context"
-	"os"
-	"runtime"
-
-	"github.com/ncruces/zenity"
-	output "github.com/shhac/lib-agent-output"
+	"errors"
+	"fmt"
 )
 
-// Field is one input in a form.
+// InputType is the kind of field requested.
+type InputType int
+
+const (
+	// Text is a plain text entry field.
+	Text InputType = iota
+	// Password is a hidden entry field (echo off).
+	Password
+)
+
+// Field is a single input requested from the user.
 type Field struct {
-	ID      string // key in the returned map
-	Label   string // prompt shown to the user
-	Hidden  bool   // mask the input (tokens, passwords, cookies)
-	Initial string // pre-filled value (e.g. an existing token to edit); optional
+	ID        string
+	Label     string
+	InputType InputType
+	// Initial pre-fills the entry with a value (e.g. a stored token the
+	// user is editing). Empty means no prefill. Optional.
+	Initial string
 }
 
-// Spec is a titled form of one or more fields.
+// Spec is a complete dialog request.
 type Spec struct {
-	Title  string
-	Fields []Field
+	Title string
+	Items []Field
 }
 
-// promptOne is the dialog backend; a package var so tests can replace it and
-// never actually open a window.
-var promptOne = zenityPromptOne
-
-func zenityPromptOne(ctx context.Context, title string, f Field) (string, error) {
-	opts := []zenity.Option{zenity.Title(title), zenity.Context(ctx)}
-	if f.Hidden {
-		opts = append(opts, zenity.HideText())
-	}
-	if f.Initial != "" {
-		opts = append(opts, zenity.EntryText(f.Initial))
-	}
-	return zenity.Entry(f.Label, opts...)
+// Result is one filled-in field.
+type Result struct {
+	ID    string
+	Value string
 }
 
-// Prompt shows the form and returns the entered values keyed by field ID. It
-// returns a structured error when no GUI is available (see Available) or when
-// the user cancels.
-func Prompt(ctx context.Context, spec Spec) (map[string]string, error) {
-	if err := Available(); err != nil {
-		return nil, err
+// Sentinel errors returned by Prompter implementations. Callers use
+// errors.Is to classify failures.
+var (
+	ErrCancelled   = errors.New("cancelled by user")
+	ErrNoGUI       = errors.New("no GUI dialog available")
+	ErrUnsupported = errors.New("platform unsupported")
+)
+
+// Category groups Prompter errors by who can fix them. Mirrors common
+// LLM-error taxonomies (e.g. a fixable_by envelope) but stays free of
+// host-application types so this package is droppable into siblings.
+type Category string
+
+const (
+	// CategoryHuman — environment issue. The user must change something
+	// (use a graphical machine, install zenity/kdialog, etc.). Don't retry.
+	CategoryHuman Category = "human"
+	// CategoryRetry — transient. The user cancelled the dialog; re-running
+	// the same command is the right next step.
+	CategoryRetry Category = "retry"
+	// CategoryAgent — anything else. The agent can probably correct it
+	// (bad spec, programmer error, unknown InputType, etc.).
+	CategoryAgent Category = "agent"
+)
+
+// ClassifyError maps a Prompter error onto a Category and a hint string
+// suitable for surfacing to an LLM. Returns (CategoryAgent, "") for nil
+// or unrecognised errors so callers can treat the result uniformly.
+//
+// Sibling projects can plug this directly into their own error envelope
+// (e.g. {"error": err.Error(), "fixable_by": cat, "hint": hint}) without
+// re-deriving the sentinel→category mapping.
+func ClassifyError(err error) (Category, string) {
+	switch {
+	case err == nil:
+		return CategoryAgent, ""
+	case errors.Is(err, ErrCancelled):
+		return CategoryRetry, "User cancelled the dialog. Re-run to retry."
+	case errors.Is(err, ErrNoGUI), errors.Is(err, ErrUnsupported):
+		return CategoryHuman, "A graphical desktop session is required. Run on the user's local machine, or fall back to a non-interactive flow."
+	default:
+		return CategoryAgent, ""
 	}
-	out := make(map[string]string, len(spec.Fields))
-	for _, f := range spec.Fields {
-		v, err := promptOne(ctx, spec.Title, f)
-		if err != nil {
-			return nil, output.Wrap(err, output.FixableByHuman).
-				WithHint("the secret prompt was cancelled or failed")
-		}
-		out[f.ID] = v
-	}
-	return out, nil
 }
 
-// PromptSecret is the single-hidden-field convenience used by most `--form`
-// flows: one masked prompt, one returned value.
+// Prompter renders a Spec to the user and returns their answers.
+//
+// Implementations must:
+//   - Return Result entries in the same order as Spec.Items.
+//   - Return an error wrapping ErrCancelled if the user dismisses any popup.
+//   - Return an error wrapping ErrNoGUI if Available reports the host is unusable.
+type Prompter interface {
+	Prompt(ctx context.Context, spec Spec) ([]Result, error)
+	Available() error
+}
+
+// Default is the Prompter used by the CLI. Tests swap it via SetDefault.
+var Default Prompter = &zenityPrompter{}
+
+// PromptSecret is the single-hidden-field convenience used by most
+// secret-entry flows: it shows one masked Password prompt via [Default]
+// and returns the entered value. The agent never sees what the user
+// types. Errors are the Prompter's own sentinels — classify them with
+// [ClassifyError].
 func PromptSecret(ctx context.Context, title, label string) (string, error) {
-	res, err := Prompt(ctx, Spec{Title: title, Fields: []Field{{ID: "secret", Label: label, Hidden: true}}})
+	results, err := Default.Prompt(ctx, Spec{
+		Title: title,
+		Items: []Field{{ID: "secret", Label: label, InputType: Password}},
+	})
 	if err != nil {
 		return "", err
 	}
-	return res["secret"], nil
+	if len(results) == 0 {
+		return "", nil
+	}
+	return results[0].Value, nil
 }
 
-// Available reports whether a GUI dialog can be shown, returning a structured
-// fixable_by:human error (not a panic) when not — so a CLI can fall back to an
-// env var or flag on a headless host.
-func Available() error {
-	switch runtime.GOOS {
-	case "darwin":
-		if os.Getenv("SSH_CONNECTION") != "" && os.Getenv("TERM_PROGRAM") == "" {
-			return noGUI("appears to be an SSH session with no local GUI")
-		}
-	case "linux":
-		if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
-			return noGUI("no DISPLAY/WAYLAND_DISPLAY is set")
+// SetDefault replaces the package-level Default and returns a function
+// that restores the previous value. Intended for tests.
+func SetDefault(p Prompter) (restore func()) {
+	prev := Default
+	Default = p
+	return func() { Default = prev }
+}
+
+// Prompt renders spec via the package-level Default Prompter — the convenience
+// for callers that don't hold their own Prompter. Errors are classifiable with
+// ClassifyError.
+func Prompt(ctx context.Context, spec Spec) ([]Result, error) {
+	return Default.Prompt(ctx, spec)
+}
+
+// Available reports whether a GUI dialog can plausibly be shown, via the
+// package-level Default Prompter. Returns an error wrapping ErrNoGUI /
+// ErrUnsupported when not (classifiable with ClassifyError).
+func Available() error { return Default.Available() }
+
+// validateSpec checks Spec invariants that don't depend on a backend.
+// An empty Items list is allowed (returns nil) — Prompter implementations
+// short-circuit on it. An unknown InputType is rejected up-front so the
+// error is the same regardless of which backend is configured.
+func validateSpec(spec Spec) error {
+	for _, item := range spec.Items {
+		if item.InputType != Text && item.InputType != Password {
+			return fmt.Errorf("dialog: invalid InputType %d for field %q", item.InputType, item.ID)
 		}
 	}
 	return nil
-}
-
-func noGUI(reason string) error {
-	return output.New("cannot open a secret dialog: "+reason, output.FixableByHuman).
-		WithHint("run on a machine with a GUI, or provide the secret via an environment variable")
 }

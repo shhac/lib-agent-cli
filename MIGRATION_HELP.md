@@ -129,16 +129,22 @@ cmd.Flags().Bool("form", false, "Prompt for the token via a native dialog (never
 // in RunE:
 if form, _ := cmd.Flags().GetBool("form"); form {
     token, err = dialog.PromptSecret(cmd.Context(), "agent-foo: "+profile, "API token")
-    if err != nil { return err }   // structured fixable_by:human on a headless host
+    if err != nil {
+        // dialog returns a NEUTRAL error; map it to your envelope:
+        cat, hint := dialog.ClassifyError(err) // CategoryHuman | CategoryRetry | CategoryAgent
+        return output.New(err.Error(), output.FixableBy(cat)).WithHint(hint)
+    }
 }
 ```
 
-Two-secret flows (e.g. a token **and** a cookie) use the multi-field form:
+Two-secret flows (e.g. a token **and** a cookie) use the multi-field form
+(`InputType: dialog.Password` masks the entry; `dialog.Text` is plain;
+`Initial` pre-fills a stored value being edited):
 
 ```go
-res, err := dialog.Prompt(ctx, dialog.Spec{Title: "agent-foo", Fields: []dialog.Field{
-    {ID: "token", Label: "API token", Hidden: true},
-    {ID: "cookie", Label: "Session cookie", Hidden: true},
+res, err := dialog.Prompt(ctx, dialog.Spec{Title: "agent-foo", Items: []dialog.Field{
+    {ID: "token", Label: "API token", InputType: dialog.Password},
+    {ID: "cookie", Label: "Session cookie", InputType: dialog.Password},
 }})
 ```
 
@@ -169,9 +175,12 @@ migration is meant to surface and refine — `lib-agent-cli` is pre-1.0).
 
 ### 4. `dialog` availability is a structured error, not a crash
 On a headless host `dialog.Available()` (called inside `Prompt`) returns a
-`fixable_by:human` `output.Error`, which propagates through `cli.Run` to stderr.
-Make sure your CLI still offers a non-GUI path (an env var or a flag) so an
-agent on a headless box can authenticate without the dialog.
+**neutral** error wrapping `dialog.ErrNoGUI`/`ErrUnsupported` — the dialog
+package deliberately does NOT know your `fixable_by` taxonomy. Map it with
+`dialog.ClassifyError(err)` → `(Category, hint)` and fold `Category` into your
+own envelope (`CategoryHuman`/`CategoryRetry`/`CategoryAgent` line up with
+`fixable_by`). Still offer a non-GUI path (env var or flag) so an agent on a
+headless box can authenticate without the dialog.
 
 ---
 

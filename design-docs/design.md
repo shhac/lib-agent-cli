@@ -54,7 +54,7 @@ lib-agent-cli      (cobra + creds runtime; MAY have deps)
    ├─ xdg   : ConfigDir/CacheDir/DataDir/StateDir/RuntimeDir (spec env + fallbacks) (+ App bundle)
    ├─ creds : Store (0600), Keychain, FirstNonEmpty/FirstNonZero/Getenv
    ├─ cli   : NewRoot(Options)+Globals, ConfigCommand, RequireConfirm, HandleUnknownCommand, Run
-   └─ dialog: PromptSecret/Prompt/Available (the --form secret dialog)
+   └─ dialog: Prompter iface + PromptSecret/Prompt/Available + neutral Category/ClassifyError (the --form secret dialog)
 ```
 
 `lib-agent-cli` depends on the **published** `lib-agent-output` tag, so a tool
@@ -69,14 +69,21 @@ copied across the family.
 
 **`dialog` (secret entry via native OS prompt) — the `--form` boilerplate.**
 slack/posthog use a plain single `zenity.Entry`; cloudflare uses a richer
-multi-field `Prompter`/`Spec` with SSH/DISPLAY availability checks. Rather than
-defer on "hasn't converged," we **took the superset**: a multi-field `Spec`
-(slack's xoxc+xoxd genuinely needs two fields) with a single-secret
-`PromptSecret` convenience on top, plus a structured `Available()` headless
-check. The zenity dependency is acceptable here — `lib-agent-cli` is the
-runtime lib and already carries cobra; a `creds`-only consumer that never
-imports `dialog` doesn't compile zenity into its binary. The load-bearing
-contract: **a secret never transits argv** — `--form` pops the prompt instead.
+multi-field `Prompter`/`Spec` with SSH/DISPLAY availability checks; agent-sql
+went furthest — a `Prompter` **interface** with a swappable `Default`, an
+`InputType` enum, build-tagged + tested per-platform `Available`, and a
+**neutral `Category`** taxonomy returned by `ClassifyError` so the package never
+imports the host's error contract. We **adopted sql's design** as the family
+dialog (v0.4.0): a multi-field `Spec` (slack's xoxc+xoxd needs two fields) with
+a single-secret `PromptSecret` convenience on top, the pluggable `Prompter` seam
+(+ a `dialogtest.Recorder` fake), `Field.Initial` prefill, and the neutral
+`Category`/`ClassifyError` decoupling — the host maps `Category → fixable_by` in
+~3 lines. Crucially the package does **not** import `lib-agent-output`, so it
+drops into any sibling unchanged. The zenity dependency is acceptable here —
+`lib-agent-cli` is the runtime lib and already carries cobra; a `creds`-only
+consumer that never imports `dialog` doesn't compile zenity into its binary. The
+load-bearing contract: **a secret never transits argv** — `--form` pops the
+prompt instead.
 
 **Deferred — `redact`:** the redaction *mechanism* (tree-walk + `@redacted` +
 `--expose`) is shareable with a CLI-supplied `shouldRedact` predicate, but only

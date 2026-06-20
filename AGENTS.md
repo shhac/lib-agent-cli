@@ -21,7 +21,7 @@ survey it came from, and the shared-vs-domain boundary per piece.
 | `xdg/` | freedesktop dirs `ConfigDir`/`CacheDir`/`DataDir`/`StateDir`/`RuntimeDir` (spec env vars + fallbacks when unset) (+ `App{Name}` bundle) |
 | `creds/` | `Store` (0600 JSON), `Keychain` (macOS `security`), `FirstNonEmpty`/`FirstNonZero`/`Getenv` |
 | `cli/` | `NewRoot`+`Options`/`Globals`, `ConfigCommand`, `RequireConfirm`/`AddConfirmFlag`, `HandleUnknownCommand`, `Run` |
-| `dialog/` | `PromptSecret`/`Prompt`/`Available` — the `--form` native secret dialog (zenity) |
+| `dialog/` | `Prompter`/`PromptSecret`/`Prompt`/`Available` + neutral `Category`/`ClassifyError` — the `--form` native secret dialog (zenity); no lib-agent-output coupling |
 | `examples/demo/` | the kitchen-sink CLI exercising every package; built + driven by `demo_test.go` |
 
 ## Build, test, verify
