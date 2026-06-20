@@ -22,6 +22,7 @@ keychain invocation is identical down to the flags, and the cobra root setup is
 | [`xdg`](xdg) | freedesktop base dirs — `ConfigDir`/`CacheDir`/`DataDir`/`StateDir`/`RuntimeDir` with spec env vars + sensible fallbacks when unset (+ an `App{Name}` bundle: one identity → all paths) |
 | [`creds`](creds) | secret plumbing — `Store` (0600 JSON load/save), `Keychain` (macOS `security` wrapper), `FirstNonEmpty`/`FirstNonZero`/`Getenv` value resolvers |
 | [`cli`](cli) | `NewRoot(Options)` (cobra root with shared flags + `--format` validation), `ConfigCommand(keys)` (`get`/`set`/`unset`/`list`), `RequireConfirm`/`AddConfirmFlag` (the `--yes` gate), `HandleUnknownCommand`, `Run` |
+| [`yaml`](yaml) | opt-in `--format yaml` encoder (registers a yaml.v3 encoder for lib-agent-output's FormatYAML; blank-import to enable) — keeps the core output lib dependency-free |
 | [`dialog`](dialog) | the `--form` boilerplate: `Prompter` interface + `PromptSecret`/`Prompt`/`Available` (native OS secret dialog via zenity; tokens never touch argv) + neutral `Category`/`ClassifyError` (no host-error coupling) + `dialogtest.Recorder` |
 
 The CLI supplies the **domain inputs** — app name, keychain service, env-var

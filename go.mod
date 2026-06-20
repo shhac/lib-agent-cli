@@ -6,6 +6,7 @@ require (
 	github.com/ncruces/zenity v0.10.14
 	github.com/shhac/lib-agent-output v0.3.0
 	github.com/spf13/cobra v1.10.2
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
