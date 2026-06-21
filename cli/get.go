@@ -6,6 +6,29 @@ import (
 	output "github.com/shhac/lib-agent-output"
 )
 
+// EmitItem writes a single, already-resolved record per the family's get-output
+// contract: NDJSON by default (one compact line), or the pretty object under
+// --format json|yaml. Use it for single-only gets — composite-key (e.g. a
+// message by channel+ts), singletons (e.g. a balance), or multi-field lookups —
+// that don't fit EntityGet's 1..N id model but should still default to NDJSON
+// like every other get.
+//
+// Unlike EntityGet, --format json|yaml yields the BARE object, not a
+// {"data":[…]} envelope, because there is exactly one thing. Reserve this for
+// commands that emit a structured record; raw passthrough/content responses
+// (e.g. `api get <path>`, a request verb's envelope) should keep their own
+// rendering and are NOT get-wrapped.
+func EmitItem(w io.Writer, format string, item any) error {
+	f, err := output.ResolveFormat(format, output.FormatNDJSON)
+	if err != nil {
+		return err
+	}
+	if f == output.FormatNDJSON {
+		return output.NewNDJSONWriter(w).WriteItem(item)
+	}
+	return output.Print(w, item, f, nil)
+}
+
 // unresolvedRecord is the per-id marker emitted for an input that a
 // multi-capable get could not resolve. It is carried on stdout — NEVER on
 // stderr — as an `@unresolved` control line (NDJSON) or under the envelope's

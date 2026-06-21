@@ -10,6 +10,35 @@ import (
 	output "github.com/shhac/lib-agent-output"
 )
 
+func TestEmitItem_NDJSONDefault_OneLine(t *testing.T) {
+	var buf bytes.Buffer
+	if err := EmitItem(&buf, "", map[string]any{"id": "a", "name": "x"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := lines(t, buf.Bytes())
+	if len(got) != 1 || got[0]["id"] != "a" {
+		t.Fatalf("want one NDJSON line for the object, got %v", got)
+	}
+}
+
+func TestEmitItem_JSONFormat_BareObjectNotEnvelope(t *testing.T) {
+	var buf bytes.Buffer
+	if err := EmitItem(&buf, "json", map[string]any{"id": "a"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &obj); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, buf.String())
+	}
+	// Single-only get: --format json is the BARE object, never a {data:[…]} envelope.
+	if obj["id"] != "a" {
+		t.Fatalf("want bare object {id:a}, got %v", obj)
+	}
+	if _, wrapped := obj["data"]; wrapped {
+		t.Fatalf("EmitItem must not wrap in a data envelope: %v", obj)
+	}
+}
+
 // resolverFrom builds a resolver from a fixed map; a missing key returns the
 // supplied error (or a default not-found if errs has no entry).
 func resolverFrom(recs map[string]any, errs map[string]error) func(string) (any, error) {
