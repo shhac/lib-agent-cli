@@ -3,10 +3,17 @@ package creds
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 )
+
+// NoKeychainEnv, when set to a truthy value, makes Keychain.Available() report
+// false so callers fall back to the 0600 file store. Use it in CI, tests, or any
+// non-interactive context: the macOS `security` CLI is then never invoked, so it
+// can never block on a GUI authorization prompt.
+const NoKeychainEnv = "LIB_AGENT_NO_KEYCHAIN"
 
 // ErrKeychainUnavailable is returned by keychain mutations on platforms without
 // a supported backend (currently anything other than macOS).
@@ -34,8 +41,24 @@ func runSecurity(args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// Available reports whether the keychain backend can be used (macOS only).
-func (k *Keychain) Available() bool { return runtime.GOOS == "darwin" }
+// Available reports whether the keychain backend can be used: macOS only, and
+// not opted out via LIB_AGENT_NO_KEYCHAIN. When the opt-out is set, callers fall
+// back to the file store and the `security` CLI (and its GUI prompt) is never
+// reached — which is what makes the credential-write path testable headlessly.
+func (k *Keychain) Available() bool {
+	return runtime.GOOS == "darwin" && !noKeychain()
+}
+
+// noKeychain reports whether keychain use is opted out via LIB_AGENT_NO_KEYCHAIN.
+// Any value other than "", "0", or "false" (case-insensitive) opts out.
+func noKeychain() bool {
+	switch strings.ToLower(os.Getenv(NoKeychainEnv)) {
+	case "", "0", "false":
+		return false
+	default:
+		return true
+	}
+}
 
 // Get returns the secret for account and whether it was found.
 func (k *Keychain) Get(account string) (string, bool) {
