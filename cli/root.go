@@ -21,6 +21,11 @@ type Globals struct {
 	Format    string
 	TimeoutMS int
 	Debug     bool
+	// Color is the --color mode: "auto" (default), "always", or "never". It is
+	// resolved in PersistentPreRunE into the output package's process-wide color
+	// mode; the actual decision is per-stream (a piped stdout stays uncolored even
+	// when stderr is a terminal).
+	Color string
 }
 
 // Options configures NewRoot.
@@ -56,6 +61,15 @@ func NewRoot(o Options) *cobra.Command {
 			if o.ConfigDefaults != nil {
 				o.ConfigDefaults()
 			}
+			if o.Globals != nil {
+				// Resolve --color first so even a subsequent format error renders
+				// with the chosen color policy. An unknown value is agent-fixable.
+				mode, err := output.ParseColorMode(o.Globals.Color)
+				if err != nil {
+					return err
+				}
+				output.SetColorMode(mode)
+			}
 			if o.Globals != nil && o.Globals.Format != "" {
 				if _, err := output.ParseFormat(o.Globals.Format); err != nil {
 					// A command may opt into extra formats it renders itself
@@ -74,6 +88,10 @@ func NewRoot(o Options) *cobra.Command {
 		pf.StringVarP(&o.Globals.Format, "format", "f", "", "Output format: json, yaml, jsonl")
 		pf.IntVarP(&o.Globals.TimeoutMS, "timeout", "t", 0, "Request timeout in milliseconds")
 		pf.BoolVarP(&o.Globals.Debug, "debug", "d", false, "Log debug diagnostics to stderr")
+		pf.StringVar(&o.Globals.Color, "color", "auto", "Colorize output: auto (color when the stream is a terminal), always, or never")
+		_ = root.RegisterFlagCompletionFunc("color", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+			return []string{"auto", "always", "never"}, cobra.ShellCompDirectiveNoFileComp
+		})
 	}
 	HandleUnknownCommand(root, o.UnknownHint)
 	return root
