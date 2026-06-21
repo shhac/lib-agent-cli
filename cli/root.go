@@ -64,11 +64,15 @@ func NewRoot(o Options) *cobra.Command {
 			if o.Globals != nil {
 				// Resolve --color first so even a subsequent format error renders
 				// with the chosen color policy. An unknown value is agent-fixable.
+				// ParseColorMode returns the safe ColorAuto default on error, and we
+				// set it unconditionally so a bad value never leaves a previously-set
+				// (e.g. earlier in-process) mode in force — the error then renders
+				// under auto, not stale state.
 				mode, err := output.ParseColorMode(o.Globals.Color)
+				output.SetColorMode(mode)
 				if err != nil {
 					return err
 				}
-				output.SetColorMode(mode)
 			}
 			if o.Globals != nil && o.Globals.Format != "" {
 				if _, err := output.ParseFormat(o.Globals.Format); err != nil {
