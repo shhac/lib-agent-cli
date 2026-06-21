@@ -52,13 +52,18 @@ func NewRoot(o Options) *cobra.Command {
 		Version:       o.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			if o.ConfigDefaults != nil {
 				o.ConfigDefaults()
 			}
 			if o.Globals != nil && o.Globals.Format != "" {
 				if _, err := output.ParseFormat(o.Globals.Format); err != nil {
-					return output.Wrap(err, output.FixableByAgent)
+					// A command may opt into extra formats it renders itself
+					// (e.g. a conversation "transcript") via AllowFormats; those
+					// are not in the universal set and are valid only there.
+					if !formatAllowedFor(cmd, o.Globals.Format) {
+						return unknownFormatError(cmd, o.Globals.Format)
+					}
 				}
 			}
 			return nil
