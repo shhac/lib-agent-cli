@@ -26,6 +26,11 @@ type Globals struct {
 	// mode; the actual decision is per-stream (a piped stdout stays uncolored even
 	// when stderr is a terminal).
 	Color string
+	// Expose is the --expose allowlist: paths/keys (or "all") that reveal an
+	// otherwise-redacted field. A CLI that redacts output passes it straight to
+	// output.Redactor; the flag exists family-wide so the @redacted notes'
+	// "--expose <path>" hint is always actionable, even on CLIs that don't redact.
+	Expose []string
 }
 
 // Options configures NewRoot.
@@ -96,6 +101,7 @@ func NewRoot(o Options) *cobra.Command {
 		_ = root.RegisterFlagCompletionFunc("color", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 			return []string{"auto", "always", "never"}, cobra.ShellCompDirectiveNoFileComp
 		})
+		pf.StringSliceVar(&o.Globals.Expose, "expose", nil, "Reveal redacted fields by path or key (repeatable; 'all' to reveal everything)")
 	}
 	HandleUnknownCommand(root, o.UnknownHint)
 	return root
