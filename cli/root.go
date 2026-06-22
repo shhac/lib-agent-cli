@@ -16,6 +16,7 @@ import (
 
 	"github.com/shhac/lib-agent-cli/graphics"
 	"github.com/shhac/lib-agent-cli/hyperlink"
+	"github.com/shhac/lib-agent-cli/internal/term"
 )
 
 // Globals holds the persistent flags shared by every command. A CLI keeps one,
@@ -97,30 +98,27 @@ func NewRoot(o Options) *cobra.Command {
 			if o.ConfigDefaults != nil {
 				o.ConfigDefaults()
 			}
-			if o.Globals != nil {
-				// Resolve --color first so even a subsequent format error renders
-				// with the chosen color policy. An unknown value is agent-fixable.
-				// ParseColorMode returns the safe ColorAuto default on error, and we
-				// set it unconditionally so a bad value never leaves a previously-set
-				// (e.g. earlier in-process) mode in force — the error then renders
-				// under auto, not stale state.
-				mode, err := output.ParseColorMode(o.Globals.Color)
-				output.SetColorMode(mode)
-				if err != nil {
-					return err
-				}
+			if o.Globals == nil {
+				return nil
 			}
-			if o.Globals != nil && o.Images {
-				if _, err := graphics.ParseMode(o.Globals.Images); err != nil {
-					return output.New(err.Error(), output.FixableByAgent)
-				}
+			// Resolve --color first so even a subsequent format error renders
+			// with the chosen color policy. An unknown value is agent-fixable.
+			// ParseColorMode returns the safe ColorAuto default on error, and we
+			// set it unconditionally so a bad value never leaves a previously-set
+			// (e.g. earlier in-process) mode in force — the error then renders
+			// under auto, not stale state.
+			mode, err := output.ParseColorMode(o.Globals.Color)
+			output.SetColorMode(mode)
+			if err != nil {
+				return err
 			}
-			if o.Globals != nil && o.Hyperlinks {
-				if _, err := hyperlink.ParseMode(o.Globals.Hyperlinks); err != nil {
-					return output.New(err.Error(), output.FixableByAgent)
-				}
+			if err := validateToggle(o.Images, o.Globals.Images, graphics.ParseMode); err != nil {
+				return err
 			}
-			if o.Globals != nil && o.Globals.Format != "" {
+			if err := validateToggle(o.Hyperlinks, o.Globals.Hyperlinks, hyperlink.ParseMode); err != nil {
+				return err
+			}
+			if o.Globals.Format != "" {
 				if _, err := output.ParseFormat(o.Globals.Format); err != nil {
 					// A command may opt into extra formats it renders itself
 					// (e.g. a conversation "transcript") via AllowFormats; those
@@ -146,22 +144,39 @@ func NewRoot(o Options) *cobra.Command {
 			pf.StringSliceVar(&o.Globals.Expose, "expose", nil, "Reveal redacted fields by path or key (repeatable; 'all' to reveal everything)")
 		}
 		if o.Images {
-			pf.StringVar(&o.Globals.Images, "images", "off", "Render images inline: off, auto (when the terminal supports it), or on (force)")
-			_ = pf.MarkHidden("images")
-			_ = root.RegisterFlagCompletionFunc("images", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
-				return []string{"off", "auto", "on"}, cobra.ShellCompDirectiveNoFileComp
-			})
+			bindStreamToggle(root, &o.Globals.Images, "images", "Render images inline: off, auto (when the terminal supports it), or on (force)")
 		}
 		if o.Hyperlinks {
-			pf.StringVar(&o.Globals.Hyperlinks, "hyperlinks", "off", "Render OSC 8 terminal hyperlinks: off, auto (on a TTY), or on (force)")
-			_ = pf.MarkHidden("hyperlinks")
-			_ = root.RegisterFlagCompletionFunc("hyperlinks", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
-				return []string{"off", "auto", "on"}, cobra.ShellCompDirectiveNoFileComp
-			})
+			bindStreamToggle(root, &o.Globals.Hyperlinks, "hyperlinks", "Render OSC 8 terminal hyperlinks: off, auto (on a TTY), or on (force)")
 		}
 	}
 	HandleUnknownCommand(root, o.UnknownHint)
 	return root
+}
+
+// validateToggle validates an off/auto/on stream-toggle flag value (--images,
+// --hyperlinks) when its feature is enabled, surfacing a bad value as an
+// agent-fixable error. parse is the feature's own ParseMode.
+func validateToggle(enabled bool, val string, parse func(string) (term.Mode, error)) error {
+	if !enabled {
+		return nil
+	}
+	if _, err := parse(val); err != nil {
+		return output.New(err.Error(), output.FixableByAgent)
+	}
+	return nil
+}
+
+// bindStreamToggle registers a hidden off/auto/on stream-toggle persistent flag
+// defaulting off, with value completion — the shared shape of --images and
+// --hyperlinks.
+func bindStreamToggle(root *cobra.Command, dst *string, name, usage string) {
+	pf := root.PersistentFlags()
+	pf.StringVar(dst, name, "off", usage)
+	_ = pf.MarkHidden(name)
+	_ = root.RegisterFlagCompletionFunc(name, func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return []string{"off", "auto", "on"}, cobra.ShellCompDirectiveNoFileComp
+	})
 }
 
 // HandleUnknownCommand makes cmd return a structured fixable_by:agent error
