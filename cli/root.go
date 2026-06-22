@@ -49,12 +49,6 @@ type Options struct {
 	ConfigDefaults func()
 	// UnknownHint is shown by the unknown-subcommand handler (e.g. "run 'foo usage'").
 	UnknownHint string
-	// SkipFormatValidation lets a CLI route its globals through NewRoot (so it gets
-	// every shared flag automatically) while keeping its OWN --format validation —
-	// for a CLI with a bespoke lenient parser or error wording (e.g. lin). NewRoot
-	// still binds --format and resolves --color; it just doesn't reject the value,
-	// leaving that to the CLI's ConfigDefaults/PreRun logic.
-	SkipFormatValidation bool
 	// Redacts indicates the CLI redacts output (it constructs an output.Redactor /
 	// calls output.Redact). Only then does NewRoot register the global --expose
 	// flag — so a tool that never hides a field doesn't advertise a flag that
@@ -92,7 +86,7 @@ func NewRoot(o Options) *cobra.Command {
 					return err
 				}
 			}
-			if !o.SkipFormatValidation && o.Globals != nil && o.Globals.Format != "" {
+			if o.Globals != nil && o.Globals.Format != "" {
 				if _, err := output.ParseFormat(o.Globals.Format); err != nil {
 					// A command may opt into extra formats it renders itself
 					// (e.g. a conversation "transcript") via AllowFormats; those
