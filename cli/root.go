@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/shhac/lib-agent-cli/graphics"
+	"github.com/shhac/lib-agent-cli/hyperlink"
 )
 
 // Globals holds the persistent flags shared by every command. A CLI keeps one,
@@ -39,6 +40,11 @@ type Globals struct {
 	// rendering isn't universal, so a tool with nothing to draw doesn't advertise
 	// the flag; on those it stays "". See package graphics.
 	Images string
+	// Hyperlinks is the --hyperlinks mode: "off" (default), "auto", or "on". A
+	// CLI that renders OSC 8 terminal hyperlinks passes it to
+	// hyperlink.ParseMode/Active. Bound only when Options.Hyperlinks is set; on
+	// other tools it stays "". See package hyperlink.
+	Hyperlinks string
 }
 
 // Options configures NewRoot.
@@ -70,6 +76,10 @@ type Options struct {
 	// nothing to draw doesn't advertise it. Hidden because it's a niche
 	// human-only knob; the CLI documents it in its own usage text.
 	Images bool
+	// Hyperlinks indicates the CLI renders OSC 8 terminal hyperlinks (via the
+	// hyperlink package). Like Images, it opts the hidden global --hyperlinks
+	// flag (off/auto/on) into Globals.Hyperlinks with up-front validation.
+	Hyperlinks bool
 }
 
 // NewRoot builds the root command with the family conventions: SilenceUsage and
@@ -105,6 +115,11 @@ func NewRoot(o Options) *cobra.Command {
 					return output.New(err.Error(), output.FixableByAgent)
 				}
 			}
+			if o.Globals != nil && o.Hyperlinks {
+				if _, err := hyperlink.ParseMode(o.Globals.Hyperlinks); err != nil {
+					return output.New(err.Error(), output.FixableByAgent)
+				}
+			}
 			if o.Globals != nil && o.Globals.Format != "" {
 				if _, err := output.ParseFormat(o.Globals.Format); err != nil {
 					// A command may opt into extra formats it renders itself
@@ -134,6 +149,13 @@ func NewRoot(o Options) *cobra.Command {
 			pf.StringVar(&o.Globals.Images, "images", "off", "Render images inline: off, auto (when the terminal supports it), or on (force)")
 			_ = pf.MarkHidden("images")
 			_ = root.RegisterFlagCompletionFunc("images", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+				return []string{"off", "auto", "on"}, cobra.ShellCompDirectiveNoFileComp
+			})
+		}
+		if o.Hyperlinks {
+			pf.StringVar(&o.Globals.Hyperlinks, "hyperlinks", "off", "Render OSC 8 terminal hyperlinks: off, auto (on a TTY), or on (force)")
+			_ = pf.MarkHidden("hyperlinks")
+			_ = root.RegisterFlagCompletionFunc("hyperlinks", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 				return []string{"off", "auto", "on"}, cobra.ShellCompDirectiveNoFileComp
 			})
 		}

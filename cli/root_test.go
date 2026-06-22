@@ -65,6 +65,26 @@ func TestImagesFlagOptIn(t *testing.T) {
 	}
 }
 
+func TestHyperlinksFlagOptIn(t *testing.T) {
+	if NewRoot(Options{Use: "demo", Globals: &Globals{}}).PersistentFlags().Lookup("hyperlinks") != nil {
+		t.Error("--hyperlinks should not be registered without Options.Hyperlinks")
+	}
+	g := &Globals{}
+	root := NewRoot(Options{Use: "demo", Globals: g, Hyperlinks: true})
+	f := root.PersistentFlags().Lookup("hyperlinks")
+	if f == nil || !f.Hidden || f.DefValue != "off" {
+		t.Fatalf("--hyperlinks should be registered, hidden, default off; got %+v", f)
+	}
+	g.Hyperlinks = "bogus"
+	if err := root.PersistentPreRunE(root, nil); err == nil {
+		t.Error("invalid --hyperlinks should error")
+	}
+	g.Hyperlinks = "auto"
+	if err := root.PersistentPreRunE(root, nil); err != nil {
+		t.Errorf("valid --hyperlinks should pass, got %v", err)
+	}
+}
+
 func TestConfigDefaultsHookRuns(t *testing.T) {
 	called := false
 	root := NewRoot(Options{Use: "demo", Globals: &Globals{}, ConfigDefaults: func() { called = true }})
