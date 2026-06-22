@@ -28,8 +28,8 @@ type Globals struct {
 	Color string
 	// Expose is the --expose allowlist: paths/keys (or "all") that reveal an
 	// otherwise-redacted field. A CLI that redacts output passes it straight to
-	// output.Redactor; the flag exists family-wide so the @redacted notes'
-	// "--expose <path>" hint is always actionable, even on CLIs that don't redact.
+	// output.Redactor. It is bound to --expose only when Options.Redacts is set, so
+	// a non-redacting CLI doesn't advertise a no-op flag; on those it stays nil.
 	Expose []string
 }
 
@@ -49,6 +49,13 @@ type Options struct {
 	ConfigDefaults func()
 	// UnknownHint is shown by the unknown-subcommand handler (e.g. "run 'foo usage'").
 	UnknownHint string
+	// Redacts indicates the CLI redacts output (it constructs an output.Redactor /
+	// calls output.Redact). Only then does NewRoot register the global --expose
+	// flag — so a tool that never hides a field doesn't advertise a flag that
+	// would do nothing. When true, --expose binds to Globals.Expose and the CLI
+	// passes it to output.Redact, keeping the @redacted notes' "--expose <path>"
+	// hint actionable.
+	Redacts bool
 }
 
 // NewRoot builds the root command with the family conventions: SilenceUsage and
@@ -101,7 +108,9 @@ func NewRoot(o Options) *cobra.Command {
 		_ = root.RegisterFlagCompletionFunc("color", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 			return []string{"auto", "always", "never"}, cobra.ShellCompDirectiveNoFileComp
 		})
-		pf.StringSliceVar(&o.Globals.Expose, "expose", nil, "Reveal redacted fields by path or key (repeatable; 'all' to reveal everything)")
+		if o.Redacts {
+			pf.StringSliceVar(&o.Globals.Expose, "expose", nil, "Reveal redacted fields by path or key (repeatable; 'all' to reveal everything)")
+		}
 	}
 	HandleUnknownCommand(root, o.UnknownHint)
 	return root
