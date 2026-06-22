@@ -25,18 +25,16 @@ func AllowFormats(cmd *cobra.Command, formats ...string) {
 	if cmd.Annotations == nil {
 		cmd.Annotations = map[string]string{}
 	}
-	cur := cmd.Annotations[extraFormatsAnnotation]
-	for _, f := range formats {
-		if f == "" {
-			continue
-		}
-		if cur == "" {
-			cur = f
-			continue
-		}
-		cur += "," + f
+	var all []string
+	if cur := cmd.Annotations[extraFormatsAnnotation]; cur != "" {
+		all = strings.Split(cur, ",")
 	}
-	cmd.Annotations[extraFormatsAnnotation] = cur
+	for _, f := range formats {
+		if f != "" {
+			all = append(all, f)
+		}
+	}
+	cmd.Annotations[extraFormatsAnnotation] = strings.Join(all, ",")
 }
 
 // extraFormatsFor returns the extra formats opted into by cmd or any ancestor,
