@@ -37,19 +37,26 @@ func ConfigCommand(keys []ConfigKey) *cobra.Command {
 
 	cfg := &cobra.Command{Use: "config", Short: "Get and set persisted configuration"}
 
+	// lookup resolves the key argument, returning the family's structured
+	// unknown-key error — so each subcommand starts with the same one-liner.
+	lookup := func(arg string) (ConfigKey, error) {
+		k, ok := byName[arg]
+		if !ok {
+			return ConfigKey{}, unknownKey(arg, names)
+		}
+		return k, nil
+	}
+
 	get := &cobra.Command{
 		Use:   "get <key>",
 		Short: "Show a configuration value",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			k, ok := byName[args[0]]
-			if !ok {
-				return unknownKey(args[0], names)
+			k, err := lookup(args[0])
+			if err != nil {
+				return err
 			}
-			v, set := "", false
-			if k.Get != nil {
-				v, set = k.Get()
-			}
+			v, set := k.value()
 			return writeRecord(map[string]any{"key": k.Name, "value": v, "set": set})
 		},
 	}
@@ -59,9 +66,9 @@ func ConfigCommand(keys []ConfigKey) *cobra.Command {
 		Short: "Set a configuration value",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
-			k, ok := byName[args[0]]
-			if !ok {
-				return unknownKey(args[0], names)
+			k, err := lookup(args[0])
+			if err != nil {
+				return err
 			}
 			if k.Set == nil {
 				return output.New("config key is read-only: "+k.Name, output.FixableByAgent)
@@ -78,9 +85,9 @@ func ConfigCommand(keys []ConfigKey) *cobra.Command {
 		Short: "Reset a configuration value to its default",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			k, ok := byName[args[0]]
-			if !ok {
-				return unknownKey(args[0], names)
+			k, err := lookup(args[0])
+			if err != nil {
+				return err
 			}
 			if k.Unset == nil {
 				return output.New("config key cannot be unset: "+k.Name, output.FixableByAgent)
@@ -100,10 +107,7 @@ func ConfigCommand(keys []ConfigKey) *cobra.Command {
 			w := output.NewNDJSONWriter(os.Stdout)
 			for _, name := range names {
 				k := byName[name]
-				v, set := "", false
-				if k.Get != nil {
-					v, set = k.Get()
-				}
+				v, set := k.value()
 				if err := w.WriteItem(map[string]any{
 					"key": k.Name, "value": v, "set": set, "description": k.Description,
 				}); err != nil {
@@ -116,6 +120,15 @@ func ConfigCommand(keys []ConfigKey) *cobra.Command {
 
 	cfg.AddCommand(get, set, unset, list)
 	return cfg
+}
+
+// value returns the key's current value and whether it is set, treating a nil
+// Get (a write-only/derived key) as unset rather than panicking.
+func (k ConfigKey) value() (string, bool) {
+	if k.Get == nil {
+		return "", false
+	}
+	return k.Get()
 }
 
 func writeRecord(rec map[string]any) error {
