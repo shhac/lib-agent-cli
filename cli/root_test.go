@@ -34,6 +34,37 @@ func TestPersistentPreRunValidatesFormat(t *testing.T) {
 	}
 }
 
+func TestImagesFlagOptIn(t *testing.T) {
+	// Not opted in: no --images flag, so a non-imaging tool doesn't advertise it.
+	plain := NewRoot(Options{Use: "demo", Globals: &Globals{}})
+	if plain.PersistentFlags().Lookup("images") != nil {
+		t.Error("--images should not be registered without Options.Images")
+	}
+
+	// Opted in: flag exists, is hidden, and validates its value.
+	g := &Globals{}
+	root := NewRoot(Options{Use: "demo", Globals: g, Images: true})
+	f := root.PersistentFlags().Lookup("images")
+	if f == nil {
+		t.Fatal("--images should be registered when Options.Images is set")
+	}
+	if !f.Hidden {
+		t.Error("--images should be hidden")
+	}
+	if f.DefValue != "off" {
+		t.Errorf("--images default = %q, want off", f.DefValue)
+	}
+
+	g.Images = "bogus"
+	if err := root.PersistentPreRunE(root, nil); err == nil {
+		t.Error("invalid --images should error")
+	}
+	g.Images = "auto"
+	if err := root.PersistentPreRunE(root, nil); err != nil {
+		t.Errorf("valid --images should pass, got %v", err)
+	}
+}
+
 func TestConfigDefaultsHookRuns(t *testing.T) {
 	called := false
 	root := NewRoot(Options{Use: "demo", Globals: &Globals{}, ConfigDefaults: func() { called = true }})

@@ -12,10 +12,12 @@
 // Two concerns compose, each its own seam so a caller can change one without the
 // other:
 //
-//   - the decision — WHETHER this terminal can draw images: Detect inspects the
-//     environment and returns a Protocol. A caller gates on it (plus its own
-//     isatty check and an opt-in flag) before choosing the image branch over a
-//     plain-text fallback, the same way color consults its terminal detector.
+//   - the decision — WHETHER to draw images on a given stream: a Mode (off/auto/
+//     on, the --images flag, mirroring --color) combined with the stream and the
+//     terminal's capability. Active(w, mode) is the one call a renderer makes —
+//     the images counterpart to output.Enabled for color — and Detect reports the
+//     raw capability it consults for auto. A caller chooses the image branch over
+//     a plain-text fallback when Active is true.
 //   - the mechanism — HOW image bytes become an inline escape sequence: an
 //     Encoder turns an Image into bytes you splice between two runs of text. It
 //     is Kitty-only today; a second protocol is a new method, not a change to

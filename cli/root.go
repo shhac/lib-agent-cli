@@ -13,6 +13,8 @@ import (
 
 	output "github.com/shhac/lib-agent-output"
 	"github.com/spf13/cobra"
+
+	"github.com/shhac/lib-agent-cli/graphics"
 )
 
 // Globals holds the persistent flags shared by every command. A CLI keeps one,
@@ -31,6 +33,12 @@ type Globals struct {
 	// output.Redactor. It is bound to --expose only when Options.Redacts is set, so
 	// a non-redacting CLI doesn't advertise a no-op flag; on those it stays nil.
 	Expose []string
+	// Images is the --images mode: "off" (default), "auto", or "on". A CLI that
+	// renders inline images passes it to graphics.ParseMode/Active to decide
+	// per stream. Bound to --images only when Options.Images is set — image
+	// rendering isn't universal, so a tool with nothing to draw doesn't advertise
+	// the flag; on those it stays "". See package graphics.
+	Images string
 }
 
 // Options configures NewRoot.
@@ -56,6 +64,12 @@ type Options struct {
 	// passes it to output.Redact, keeping the @redacted notes' "--expose <path>"
 	// hint actionable.
 	Redacts bool
+	// Images indicates the CLI renders inline terminal images (via the graphics
+	// package). Only then does NewRoot register the hidden global --images flag
+	// (off/auto/on) into Globals.Images and validate it up front — a tool with
+	// nothing to draw doesn't advertise it. Hidden because it's a niche
+	// human-only knob; the CLI documents it in its own usage text.
+	Images bool
 }
 
 // NewRoot builds the root command with the family conventions: SilenceUsage and
@@ -86,6 +100,11 @@ func NewRoot(o Options) *cobra.Command {
 					return err
 				}
 			}
+			if o.Globals != nil && o.Images {
+				if _, err := graphics.ParseMode(o.Globals.Images); err != nil {
+					return output.New(err.Error(), output.FixableByAgent)
+				}
+			}
 			if o.Globals != nil && o.Globals.Format != "" {
 				if _, err := output.ParseFormat(o.Globals.Format); err != nil {
 					// A command may opt into extra formats it renders itself
@@ -110,6 +129,13 @@ func NewRoot(o Options) *cobra.Command {
 		})
 		if o.Redacts {
 			pf.StringSliceVar(&o.Globals.Expose, "expose", nil, "Reveal redacted fields by path or key (repeatable; 'all' to reveal everything)")
+		}
+		if o.Images {
+			pf.StringVar(&o.Globals.Images, "images", "off", "Render images inline: off, auto (when the terminal supports it), or on (force)")
+			_ = pf.MarkHidden("images")
+			_ = root.RegisterFlagCompletionFunc("images", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+				return []string{"off", "auto", "on"}, cobra.ShellCompDirectiveNoFileComp
+			})
 		}
 	}
 	HandleUnknownCommand(root, o.UnknownHint)
