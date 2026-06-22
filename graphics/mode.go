@@ -1,84 +1,32 @@
 package graphics
 
 import (
-	"fmt"
 	"io"
-	"os"
-	"strings"
 
-	"github.com/mattn/go-isatty"
+	"github.com/shhac/lib-agent-cli/internal/term"
 )
 
-// Mode is the inline-image policy chosen by a CLI's --images flag. It mirrors
-// the shape of --color (off/auto/on ≈ never/auto/always): a conservative
-// default, an environment-gated middle, and a forcing override.
-type Mode int
+// Mode is the inline-image policy chosen by a CLI's --images flag (off/auto/on,
+// mirroring --color). It is the shared three-state stream toggle; the constants
+// and Parse/String live in internal/term so --images and --hyperlinks can't
+// drift.
+type Mode = term.Mode
 
 const (
-	// ModeOff never emits images — the safe default. Output stays plain text,
-	// so machine/LLM consumers are never handed escape bytes.
-	ModeOff Mode = iota
-	// ModeAuto emits images only when the stream is a terminal that speaks the
-	// protocol (a TTY and Detect() != ModeNone). The "just works for a human,
-	// stays plain when piped" setting.
-	ModeAuto
-	// ModeOn forces images regardless of TTY or capability detection — the
-	// escape for the false-negative case (a capable terminal Detect's env
-	// heuristic doesn't recognize). Like --color always, it will write escapes
-	// into a pipe; that footgun is the user's explicit choice.
-	ModeOn
+	ModeOff  = term.Off  // never emit images — the safe default
+	ModeAuto = term.Auto // emit only on a TTY that speaks the protocol
+	ModeOn   = term.On   // force, past TTY/detection (like --color always)
 )
 
-// ParseMode maps an --images flag value to a Mode. Empty is ModeOff (the
-// default). Unknown values are an error a CLI surfaces as agent-fixable.
-func ParseMode(s string) (Mode, error) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "off":
-		return ModeOff, nil
-	case "auto":
-		return ModeAuto, nil
-	case "on":
-		return ModeOn, nil
-	}
-	return ModeOff, fmt.Errorf("invalid images mode %q (want off, auto, or on)", s)
-}
+// ParseMode maps an --images flag value to a Mode. Empty is ModeOff; unknown
+// values are an error a CLI surfaces as agent-fixable.
+func ParseMode(s string) (Mode, error) { return term.Parse("images", s) }
 
-func (m Mode) String() string {
-	switch m {
-	case ModeAuto:
-		return "auto"
-	case ModeOn:
-		return "on"
-	default:
-		return "off"
-	}
-}
-
-// Active reports whether images should be emitted to w under mode. This is the
-// images counterpart to output.Enabled for color: the per-stream decision a
-// renderer consults before choosing the image branch over a text fallback.
-//   - off  → never
-//   - auto → only when w is a TTY and Detect() reports a graphics protocol
-//   - on   → always (the user forces past TTY/detection)
+// Active reports whether images should be emitted to w under mode — the images
+// counterpart to output.Enabled for color. Auto is gated on a TTY that also
+// reports a graphics protocol; on forces; off never.
 func Active(w io.Writer, mode Mode) bool {
-	switch mode {
-	case ModeOn:
-		return true
-	case ModeAuto:
-		return isTerminal(w) && Detect() != ProtocolNone
-	default:
-		return false
-	}
-}
-
-// isTerminal reports whether w is a terminal. Only an *os.File can be one; any
-// other writer (pipe, buffer in tests) is treated as non-terminal, so auto mode
-// keeps piped/captured output plain.
-func isTerminal(w io.Writer) bool {
-	f, ok := w.(*os.File)
-	if !ok {
-		return false
-	}
-	fd := f.Fd()
-	return isatty.IsTerminal(fd) || isatty.IsCygwinTerminal(fd)
+	return term.Active(w, mode, func(w io.Writer) bool {
+		return term.IsTerminal(w) && Detect() != ProtocolNone
+	})
 }

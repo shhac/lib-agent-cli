@@ -15,63 +15,30 @@
 package hyperlink
 
 import (
-	"fmt"
 	"io"
-	"os"
 	"strings"
 
-	"github.com/mattn/go-isatty"
+	"github.com/shhac/lib-agent-cli/internal/term"
 )
 
-// Mode is the hyperlink policy chosen by a CLI's --hyperlinks flag.
-type Mode int
+// Mode is the hyperlink policy chosen by a CLI's --hyperlinks flag (off/auto/on),
+// the shared three-state stream toggle defined in internal/term.
+type Mode = term.Mode
 
 const (
-	// ModeOff never emits hyperlinks — the safe default; output stays plain.
-	ModeOff Mode = iota
-	// ModeAuto emits hyperlinks when the stream is a terminal (OSC 8 degrades to
-	// plain label text where unsupported, so a TTY check suffices).
-	ModeAuto
-	// ModeOn forces hyperlinks regardless of TTY (e.g. piping into a pager that
-	// renders them). Like --color always, the user owns that choice.
-	ModeOn
+	ModeOff  = term.Off  // never emit hyperlinks — the safe default
+	ModeAuto = term.Auto // emit when the stream is a terminal
+	ModeOn   = term.On    // force regardless of TTY (like --color always)
 )
 
 // ParseMode maps a --hyperlinks flag value to a Mode. Empty is ModeOff.
-func ParseMode(s string) (Mode, error) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "off":
-		return ModeOff, nil
-	case "auto":
-		return ModeAuto, nil
-	case "on":
-		return ModeOn, nil
-	}
-	return ModeOff, fmt.Errorf("invalid hyperlinks mode %q (want off, auto, or on)", s)
-}
+func ParseMode(s string) (Mode, error) { return term.Parse("hyperlinks", s) }
 
-func (m Mode) String() string {
-	switch m {
-	case ModeAuto:
-		return "auto"
-	case ModeOn:
-		return "on"
-	default:
-		return "off"
-	}
-}
-
-// Active reports whether hyperlinks should be emitted to w under mode: off never,
-// auto when w is a terminal, on always.
+// Active reports whether hyperlinks should be emitted to w under mode. OSC 8 has
+// no reliable capability probe and degrades to plain label text, so the auto
+// gate is a bare TTY check.
 func Active(w io.Writer, mode Mode) bool {
-	switch mode {
-	case ModeOn:
-		return true
-	case ModeAuto:
-		return isTerminal(w)
-	default:
-		return false
-	}
+	return term.Active(w, mode, term.IsTerminal)
 }
 
 // Encode wraps text as an OSC 8 hyperlink to url:
@@ -83,14 +50,4 @@ func Encode(url, text string) string {
 		return text
 	}
 	return "\x1b]8;;" + url + "\x1b\\" + text + "\x1b]8;;\x1b\\"
-}
-
-// isTerminal reports whether w is a terminal; only an *os.File can be one.
-func isTerminal(w io.Writer) bool {
-	f, ok := w.(*os.File)
-	if !ok {
-		return false
-	}
-	fd := f.Fd()
-	return isatty.IsTerminal(fd) || isatty.IsCygwinTerminal(fd)
 }
