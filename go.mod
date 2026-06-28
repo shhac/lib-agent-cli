@@ -5,7 +5,7 @@ go 1.26
 require (
 	github.com/mattn/go-isatty v0.0.22
 	github.com/ncruces/zenity v0.10.14
-	github.com/shhac/lib-agent-output v0.8.0
+	github.com/shhac/lib-agent-output v0.10.0
 	github.com/spf13/cobra v1.10.2
 	github.com/zalando/go-keyring v0.2.8
 	gopkg.in/yaml.v3 v3.0.1
