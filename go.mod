@@ -20,7 +20,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/josephspurrier/goversioninfo v1.4.1 // indirect
 	github.com/randall77/makefat v0.0.0-20210315173500-7ddd0e42c844 // indirect
-	github.com/shhac/lib-agent-keyring v0.1.0
+	github.com/shhac/lib-agent-keyring v0.1.1
 	github.com/spf13/pflag v1.0.9 // indirect
 	golang.org/x/image v0.20.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
