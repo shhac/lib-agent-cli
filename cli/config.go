@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"os"
 	"sort"
 	"strings"
 
@@ -26,9 +25,13 @@ type ConfigKey struct {
 
 // ConfigCommand builds a `config` command group with get/set/unset/list over the
 // given keys — the get/set/list/unset boilerplate ~8 family CLIs hand-roll.
-// Output is NDJSON; unknown keys produce a fixable_by:agent error listing the
-// valid ones.
-func ConfigCommand(keys []ConfigKey) *cobra.Command {
+//
+// Every verb emits the same {key, value, set} record — the key's state after
+// the command ran (list adds description) — honoring --format via g: NDJSON by
+// default, the bare object (get/set/unset) or {"data":[…]} envelope (list)
+// under json|yaml. A nil g always emits NDJSON. Unknown keys produce a
+// fixable_by:agent error listing the valid ones.
+func ConfigCommand(g *Globals, keys []ConfigKey) *cobra.Command {
 	byName := make(map[string]ConfigKey, len(keys))
 	for _, k := range keys {
 		byName[k.Name] = k
@@ -51,13 +54,12 @@ func ConfigCommand(keys []ConfigKey) *cobra.Command {
 		Use:   "get <key>",
 		Short: "Show a configuration value",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			k, err := lookup(args[0])
 			if err != nil {
 				return err
 			}
-			v, set := k.value()
-			return writeRecord(map[string]any{"key": k.Name, "value": v, "set": set})
+			return EmitItem(cmd.OutOrStdout(), g.format(), configState(k))
 		},
 	}
 
@@ -65,7 +67,7 @@ func ConfigCommand(keys []ConfigKey) *cobra.Command {
 		Use:   "set <key> <value>",
 		Short: "Set a configuration value",
 		Args:  cobra.ExactArgs(2),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			k, err := lookup(args[0])
 			if err != nil {
 				return err
@@ -76,7 +78,10 @@ func ConfigCommand(keys []ConfigKey) *cobra.Command {
 			if err := k.Set(args[1]); err != nil {
 				return output.Wrap(err, output.FixableByAgent)
 			}
-			return writeRecord(map[string]any{"set": k.Name, "value": args[1]})
+			// Echo the written value rather than re-reading: a nil-Get
+			// (write-only) key would otherwise report itself unset.
+			rec := map[string]any{"key": k.Name, "value": args[1], "set": true}
+			return EmitItem(cmd.OutOrStdout(), g.format(), rec)
 		},
 	}
 
@@ -84,7 +89,7 @@ func ConfigCommand(keys []ConfigKey) *cobra.Command {
 		Use:   "unset <key>",
 		Short: "Reset a configuration value to its default",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			k, err := lookup(args[0])
 			if err != nil {
 				return err
@@ -95,7 +100,7 @@ func ConfigCommand(keys []ConfigKey) *cobra.Command {
 			if err := k.Unset(); err != nil {
 				return output.Wrap(err, output.FixableByAgent)
 			}
-			return writeRecord(map[string]any{"unset": k.Name})
+			return EmitItem(cmd.OutOrStdout(), g.format(), configState(k))
 		},
 	}
 
@@ -103,23 +108,39 @@ func ConfigCommand(keys []ConfigKey) *cobra.Command {
 		Use:   "list",
 		Short: "List all configuration keys",
 		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			w := output.NewNDJSONWriter(os.Stdout)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			f, err := output.ResolveFormat(g.format(), output.FormatNDJSON)
+			if err != nil {
+				return err
+			}
+			items := make([]any, 0, len(names))
 			for _, name := range names {
 				k := byName[name]
-				v, set := k.value()
-				if err := w.WriteItem(map[string]any{
-					"key": k.Name, "value": v, "set": set, "description": k.Description,
-				}); err != nil {
-					return err
-				}
+				rec := configState(k)
+				rec["description"] = k.Description
+				items = append(items, rec)
 			}
-			return nil
+			return output.WriteList(cmd.OutOrStdout(), f, items, nil, nil)
 		},
 	}
 
 	cfg.AddCommand(get, set, unset, list)
 	return cfg
+}
+
+// format is nil-safe so ConfigCommand can take an optional *Globals — a CLI
+// without shared flags gets the NDJSON default.
+func (g *Globals) format() string {
+	if g == nil {
+		return ""
+	}
+	return g.Format
+}
+
+// configState is the record every config verb emits: the key's current state.
+func configState(k ConfigKey) map[string]any {
+	v, set := k.value()
+	return map[string]any{"key": k.Name, "value": v, "set": set}
 }
 
 // value returns the key's current value and whether it is set, treating a nil
@@ -129,10 +150,6 @@ func (k ConfigKey) value() (string, bool) {
 		return "", false
 	}
 	return k.Get()
-}
-
-func writeRecord(rec map[string]any) error {
-	return output.NewNDJSONWriter(os.Stdout).WriteItem(rec)
 }
 
 func sortedNames(keys []ConfigKey) []string {

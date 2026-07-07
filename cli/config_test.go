@@ -1,9 +1,8 @@
 package cli
 
 import (
+	"bytes"
 	"errors"
-	"io"
-	"os"
 	"strings"
 	"testing"
 
@@ -20,18 +19,6 @@ func findSub(parent *cobra.Command, name string) *cobra.Command {
 	return nil
 }
 
-func captureStdout(t *testing.T, fn func() error) (string, error) {
-	t.Helper()
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	err := fn()
-	_ = w.Close()
-	os.Stdout = old
-	b, _ := io.ReadAll(r)
-	return string(b), err
-}
-
 func assertAgentErr(t *testing.T, err error) {
 	t.Helper()
 	var oe *output.Error
@@ -40,9 +27,8 @@ func assertAgentErr(t *testing.T, err error) {
 	}
 }
 
-func TestConfigCommand(t *testing.T) {
-	store := map[string]string{}
-	keys := []ConfigKey{{
+func testConfigKeys(store map[string]string) []ConfigKey {
+	return []ConfigKey{{
 		Name:        "k",
 		Description: "a key",
 		Get:         func() (string, bool) { v, ok := store["k"]; return v, ok },
@@ -55,22 +41,39 @@ func TestConfigCommand(t *testing.T) {
 		},
 		Unset: func() error { delete(store, "k"); return nil },
 	}}
-	cmd := ConfigCommand(keys)
-	get, set, unset, list := findSub(cmd, "get"), findSub(cmd, "set"), findSub(cmd, "unset"), findSub(cmd, "list")
+}
 
-	out, err := captureStdout(t, func() error { return set.RunE(set, []string{"k", "v1"}) })
-	if err != nil || store["k"] != "v1" || !strings.Contains(out, "v1") {
-		t.Fatalf("set: out=%q err=%v store=%v", out, err, store)
+func TestConfigCommand(t *testing.T) {
+	store := map[string]string{}
+	cmd := ConfigCommand(nil, testConfigKeys(store))
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	get, set, unset, list := findSub(cmd, "get"), findSub(cmd, "set"), findSub(cmd, "unset"), findSub(cmd, "list")
+	run := func(c *cobra.Command, args []string) (string, error) {
+		buf.Reset()
+		err := c.RunE(c, args)
+		return buf.String(), err
 	}
 
-	out, err = captureStdout(t, func() error { return get.RunE(get, []string{"k"}) })
-	if err != nil || !strings.Contains(out, `"value":"v1"`) {
+	out, err := run(set, []string{"k", "v1"})
+	if err != nil || store["k"] != "v1" {
+		t.Fatalf("set: out=%q err=%v store=%v", out, err, store)
+	}
+	if !strings.Contains(out, `"key":"k"`) || !strings.Contains(out, `"value":"v1"`) || !strings.Contains(out, `"set":true`) {
+		t.Errorf("set ack should be the {key,value,set} record, got %q", out)
+	}
+
+	out, err = run(get, []string{"k"})
+	if err != nil || !strings.Contains(out, `"key":"k"`) || !strings.Contains(out, `"value":"v1"`) || !strings.Contains(out, `"set":true`) {
 		t.Errorf("get: out=%q err=%v", out, err)
 	}
 
-	out, err = captureStdout(t, func() error { return list.RunE(list, nil) })
+	out, err = run(list, nil)
 	if err != nil || !strings.Contains(out, `"key":"k"`) || !strings.Contains(out, "a key") {
 		t.Errorf("list: out=%q", out)
+	}
+	if strings.Contains(out, `"data"`) {
+		t.Errorf("NDJSON list should not be enveloped, got %q", out)
 	}
 
 	// validation failure and unknown keys are fixable_by:agent and write nothing.
@@ -79,10 +82,43 @@ func TestConfigCommand(t *testing.T) {
 	assertAgentErr(t, set.RunE(set, []string{"nope", "x"}))
 	assertAgentErr(t, unset.RunE(unset, []string{"nope"}))
 
-	if _, err := captureStdout(t, func() error { return unset.RunE(unset, []string{"k"}) }); err != nil {
+	out, err = run(unset, []string{"k"})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := store["k"]; ok {
 		t.Error("unset should have cleared the key")
+	}
+	if !strings.Contains(out, `"set":false`) {
+		t.Errorf("unset ack should report the cleared state, got %q", out)
+	}
+}
+
+func TestConfigCommandHonorsFormat(t *testing.T) {
+	store := map[string]string{"k": "v1"}
+	g := &Globals{Format: "json"}
+	cmd := ConfigCommand(g, testConfigKeys(store))
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	get, list := findSub(cmd, "get"), findSub(cmd, "list")
+
+	if err := get.RunE(get, []string{"k"}); err != nil {
+		t.Fatal(err)
+	}
+	if out := buf.String(); !strings.Contains(out, "\n  ") || !strings.Contains(out, `"value": "v1"`) {
+		t.Errorf("json get should pretty-print the bare object, got %q", out)
+	}
+
+	buf.Reset()
+	if err := list.RunE(list, nil); err != nil {
+		t.Fatal(err)
+	}
+	if out := buf.String(); !strings.Contains(out, `"data"`) {
+		t.Errorf("json list should use the {\"data\":[…]} envelope, got %q", out)
+	}
+
+	g.Format = "bogus"
+	if err := get.RunE(get, []string{"k"}); err == nil {
+		t.Error("bogus format should error")
 	}
 }

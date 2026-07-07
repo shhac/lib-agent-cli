@@ -106,7 +106,7 @@ func newRoot() *cobra.Command {
 	root.PersistentFlags().StringVar(&apiKeyFlag, "api-key", "", "API key (overrides env/config)")
 
 	root.AddCommand(
-		libcli.ConfigCommand(configKeys()), // §6
+		libcli.ConfigCommand(g, configKeys()), // §6
 		usageCmd(),                         // §11
 		// …your domain subcommands…
 	)
@@ -292,8 +292,11 @@ there's a matching `CacheDir`/`DataDir`/`StateDir`/`RuntimeDir`, and an
 writes `0600` with parent dirs `0700`; `Store.Load` treats a missing file as
 empty.
 
-Expose get/set/unset/list with `cli.ConfigCommand` — you supply typed closures
-per key, the lib owns the cobra scaffolding and NDJSON output:
+Expose get/set/unset/list with `cli.ConfigCommand` — you supply the `Globals`
+(so `--format` is honored) and typed closures per key, the lib owns the cobra
+scaffolding and output. Every verb emits the key's `{key, value, set}` state
+(NDJSON by default; `--format json|yaml` gives the bare object, or a
+`{"data":[…]}` envelope for `list`):
 
 ```go
 func configKeys() []libcli.ConfigKey {

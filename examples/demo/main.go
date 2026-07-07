@@ -55,7 +55,7 @@ func main() {
 	})
 
 	root.AddCommand(
-		cli.ConfigCommand(configKeys()),
+		cli.ConfigCommand(g, configKeys()),
 		whoamiCmd(),
 		loginCmd(),
 		logoutCmd(),
