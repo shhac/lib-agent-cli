@@ -87,7 +87,7 @@ func TestHyperlinksFlagOptIn(t *testing.T) {
 
 func TestConfigDefaultsHookRuns(t *testing.T) {
 	called := false
-	root := NewRoot(Options{Use: "demo", Globals: &Globals{}, ConfigDefaults: func() { called = true }})
+	root := NewRoot(Options{Use: "demo", Globals: &Globals{}, ConfigDefaults: func(*cobra.Command) { called = true }})
 	_ = root.PersistentPreRunE(root, nil)
 	if !called {
 		t.Error("ConfigDefaults hook should run in PersistentPreRunE")

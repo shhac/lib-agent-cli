@@ -61,7 +61,12 @@ type Options struct {
 	DefaultFormat output.Format
 	// ConfigDefaults, if set, runs in PersistentPreRunE before --format is
 	// validated — apply persisted config defaults to Globals / domain flags here.
-	ConfigDefaults func()
+	// It receives the command being executed so a CLI can scope a persisted
+	// default to a command class (e.g. a query-only format default, checked via
+	// FormatAllowed) — backfilled values are then validated like the flag,
+	// keeping precedence (flag > config > built-in) a boundary concern rather
+	// than something the output layer re-resolves per emit.
+	ConfigDefaults func(cmd *cobra.Command)
 	// UnknownHint is shown by the unknown-subcommand handler (e.g. "run 'foo usage'").
 	UnknownHint string
 	// Redacts indicates the CLI redacts output (it constructs an output.Redactor /
@@ -96,7 +101,7 @@ func NewRoot(o Options) *cobra.Command {
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			if o.ConfigDefaults != nil {
-				o.ConfigDefaults()
+				o.ConfigDefaults(cmd)
 			}
 			if o.Globals == nil {
 				return nil
@@ -123,7 +128,7 @@ func NewRoot(o Options) *cobra.Command {
 					// A command may opt into extra formats it renders itself
 					// (e.g. a conversation "transcript") via AllowFormats; those
 					// are not in the universal set and are valid only there.
-					if !formatAllowedFor(cmd, o.Globals.Format) {
+					if !FormatAllowed(cmd, o.Globals.Format) {
 						return unknownFormatError(cmd, o.Globals.Format)
 					}
 				}

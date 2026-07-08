@@ -103,7 +103,7 @@ root := cli.NewRoot(cli.Options{
     Use: "agent-foo", Short: "…", Version: version,
     Globals:        g,
     DefaultFormat:  output.FormatNDJSON,
-    ConfigDefaults: func() { applyPersistedDefaults(g) /* and client setup */ },
+    ConfigDefaults: func(_ *cobra.Command) { applyPersistedDefaults(g) /* and client setup */ },
     UnknownHint:    "run 'agent-foo usage'",
 })
 root.PersistentFlags().StringVar(&domainFlag, "scope", "", "…")  // YOUR flags

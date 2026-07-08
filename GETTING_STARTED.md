@@ -94,9 +94,10 @@ func newRoot() *cobra.Command {
 		Version:       version,
 		Globals:       g,
 		DefaultFormat: output.FormatNDJSON, // lists stream NDJSON by default
-		ConfigDefaults: func() {
+		ConfigDefaults: func(cmd *cobra.Command) {
 			// Runs in PersistentPreRunE *before* --format is validated. Apply
-			// persisted defaults and set up your API client here.
+			// persisted defaults and set up your API client here. cmd lets you
+			// scope a persisted default to a command class (cli.FormatAllowed).
 			g.TimeoutMS = creds.FirstNonZero(g.TimeoutMS, 30000)
 		},
 		UnknownHint: "run 'agent-foo usage' for the command overview",
@@ -130,8 +131,8 @@ You read them inside `RunE` (e.g. `g.TimeoutMS` for the request deadline,
 `g.Format` to pick the output format). Keep a pointer to `g` in scope —
 capture it in a closure or stash it on a struct your commands can reach.
 
-**`ConfigDefaults` is the only pre-run hook.** It runs before `--format` is
-validated, so it's the place for applying persisted config and constructing
+**`ConfigDefaults` is the only pre-run hook.** It receives the command being
+executed and runs before `--format` is validated, so it's the place for applying persisted config and constructing
 your API client. If you have setup that must run *after* `--format` is parsed,
 the current `Options` can't express it — do it lazily inside `RunE` instead.
 

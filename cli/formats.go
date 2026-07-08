@@ -49,8 +49,12 @@ func extraFormatsFor(cmd *cobra.Command) []string {
 	return out
 }
 
-// formatAllowedFor reports whether format was opted into by cmd or an ancestor.
-func formatAllowedFor(cmd *cobra.Command, format string) bool {
+// FormatAllowed reports whether format was opted into by cmd or an ancestor
+// via AllowFormats. Beyond the validator's own use, it lets a CLI scope other
+// decisions to the same command classes — e.g. a ConfigDefaults hook applying
+// a persisted csv default only where csv is a legal --format value, so one
+// annotation is the single source of truth for a domain format's reach.
+func FormatAllowed(cmd *cobra.Command, format string) bool {
 	for _, f := range extraFormatsFor(cmd) {
 		if f == format {
 			return true

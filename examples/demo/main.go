@@ -46,9 +46,11 @@ func main() {
 		Version:       "0.1.0",
 		Globals:       g,
 		DefaultFormat: output.FormatNDJSON,
-		ConfigDefaults: func() {
+		ConfigDefaults: func(_ *cobra.Command) {
 			// Resolve the effective timeout: flag > (a persisted setting, omitted
-			// here) > built-in default — demonstrating FirstNonZero.
+			// here) > built-in default — demonstrating FirstNonZero. The command
+			// argument lets a real CLI scope persisted defaults per command class
+			// (see cli.FormatAllowed).
 			g.TimeoutMS = creds.FirstNonZero(g.TimeoutMS, 30000)
 		},
 		UnknownHint: "run 'demo --help' for usage",

@@ -97,3 +97,26 @@ The settled design should be proven by migrating **one** tool before expanding.
 (lin's global-writer/truncation; slack's xoxc/cookie complexity). What the first
 migration teaches — especially about the root builder's `Options` and the
 config-defaults hook — feeds back here before `dialog` lands.
+
+## Persisted flag defaults are a boundary concern (July 2026)
+
+A persisted default for a global flag (e.g. a config file's `defaults.format`)
+is an instance of the family precedence `flag > env > persisted config >
+built-in default` — it is **flag resolution**, not an output concern. The
+settled pattern, proven by lin and adopted by agent-sql:
+
+- The root's `ConfigDefaults` hook backfills the flag's `Globals` field when
+  the flag is empty. Because the hook runs *before* `--format` validation, a
+  bad persisted value gets the same structured error as a bad flag — no silent
+  fallback.
+- After pre-run, the `Globals` field is the single post-boundary truth. The
+  output layer resolves it purely (parse-or-default) and **never reads the
+  config store** — the anti-pattern this note exists to prevent is an emit-time
+  `config.Read()` inside `internal/output` (agent-sql's original shape: impure,
+  per-emit disk reads, validation bypassed).
+- `ConfigDefaults` receives the command being executed so a CLI can scope a
+  persisted default to a command class — e.g. agent-sql's `query.format`
+  (allows csv) beside `defaults.format` (universal formats only), scoped via
+  the same `AllowFormats` annotation that gates the validator, checked with
+  `FormatAllowed`. One annotation is the source of truth for a domain format's
+  whole reach: flag validity and default applicability.
