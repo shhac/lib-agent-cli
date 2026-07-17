@@ -1,19 +1,44 @@
 package creds
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
 
-func TestReadSecretFlagWins(t *testing.T) {
-	// A non-empty flag value short-circuits: stdin is never consulted, so even a
-	// pipe with different content does not override the explicit flag.
-	got, err := ReadSecret(strings.NewReader("piped\n"), "fromflag")
+func TestReadSecretFlagWinsVerbatim(t *testing.T) {
+	// A non-empty flag value short-circuits: stdin is never consulted, and the
+	// flag is returned VERBATIM — unlike the stdin path, it is not trimmed, so a
+	// flag value with surrounding whitespace survives intact. (Guards against a
+	// stray TrimSpace(flagVal) "for consistency".)
+	got, err := ReadSecret(strings.NewReader("piped\n"), "  from flag  ")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "fromflag" {
-		t.Errorf("ReadSecret = %q, want fromflag", got)
+	if got != "  from flag  " {
+		t.Errorf("ReadSecret = %q, want the flag returned verbatim (untrimmed)", got)
+	}
+}
+
+func TestReadSecretFromOSPipe(t *testing.T) {
+	// Exercise the real production reader type: cmd.InOrStdin() resolves to an
+	// *os.File, not the strings.Reader the other tests use. A pipe's read end is
+	// an *os.File that is not a tty, so ReadSecret reads and trims it.
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	if _, err := w.WriteString("piped-secret\n"); err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+	got, err := ReadSecret(r, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "piped-secret" {
+		t.Errorf("ReadSecret(os.Pipe) = %q, want piped-secret", got)
 	}
 }
 
