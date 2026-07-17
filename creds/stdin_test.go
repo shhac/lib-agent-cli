@@ -40,23 +40,37 @@ func TestReadSecretEmptyWhenNoFlagAndEmptyPipe(t *testing.T) {
 	}
 }
 
-func TestReadSecretLines(t *testing.T) {
-	got, err := ReadSecretLines(strings.NewReader("api-key-value\n\n  app-key-value  \n"))
-	if err != nil {
+func TestReadSecretsFillsFieldsInOrder(t *testing.T) {
+	var api, app string
+	if err := ReadSecrets(strings.NewReader("api-key-value\n\n  app-key-value  \n"), &api, &app); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[0] != "api-key-value" || got[1] != "app-key-value" {
-		t.Errorf("ReadSecretLines = %#v, want [api-key-value app-key-value]", got)
+	if api != "api-key-value" || app != "app-key-value" {
+		t.Errorf("ReadSecrets filled (%q, %q), want (api-key-value, app-key-value)", api, app)
 	}
 }
 
-func TestReadSecretLinesEmpty(t *testing.T) {
-	got, err := ReadSecretLines(strings.NewReader("   \n\n"))
-	if err != nil {
+func TestReadSecretsAnyFlagSetSkipsStdin(t *testing.T) {
+	// A flag on any field is all-or-nothing: stdin must not be consulted, so the
+	// other field stays empty rather than being filled from the pipe.
+	api, app := "from-flag", ""
+	if err := ReadSecrets(strings.NewReader("piped-api\npiped-app\n"), &api, &app); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 0 {
-		t.Errorf("ReadSecretLines = %#v, want empty", got)
+	if api != "from-flag" || app != "" {
+		t.Errorf("ReadSecrets = (%q, %q), want (from-flag, \"\") — flags win all-or-nothing", api, app)
+	}
+}
+
+func TestReadSecretsFewerLinesLeavesRest(t *testing.T) {
+	// One piped line fills only the first field; the second stays empty for the
+	// caller's required-ness check.
+	var api, app string
+	if err := ReadSecrets(strings.NewReader("only-api\n"), &api, &app); err != nil {
+		t.Fatal(err)
+	}
+	if api != "only-api" || app != "" {
+		t.Errorf("ReadSecrets = (%q, %q), want (only-api, \"\")", api, app)
 	}
 }
 
@@ -75,7 +89,8 @@ func TestReadSecretReadError(t *testing.T) {
 	if _, err := ReadSecret(errReader{}, ""); err == nil {
 		t.Error("ReadSecret should propagate a read error")
 	}
-	if _, err := ReadSecretLines(errReader{}); err == nil {
-		t.Error("ReadSecretLines should propagate a read error")
+	var f string
+	if err := ReadSecrets(errReader{}, &f); err == nil {
+		t.Error("ReadSecrets should propagate a read error")
 	}
 }
