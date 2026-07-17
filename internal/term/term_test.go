@@ -74,3 +74,21 @@ func TestIsTerminal(t *testing.T) {
 		t.Error("an os.Pipe writer must not be reported as a terminal")
 	}
 }
+
+func TestIsTerminalReader(t *testing.T) {
+	// A non-*os.File reader (test buffer) is never a terminal.
+	if IsTerminalReader(&bytes.Buffer{}) {
+		t.Error("a bytes.Buffer must not be reported as a terminal")
+	}
+	// A real pipe's read end is an *os.File but not a TTY — the production
+	// stdin-is-piped path.
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	if IsTerminalReader(r) {
+		t.Error("an os.Pipe reader must not be reported as a terminal")
+	}
+}

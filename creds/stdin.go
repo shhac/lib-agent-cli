@@ -2,10 +2,9 @@ package creds
 
 import (
 	"io"
-	"os"
 	"strings"
 
-	"github.com/mattn/go-isatty"
+	"github.com/shhac/lib-agent-cli/internal/term"
 )
 
 // ReadSecret resolves a single secret without ever putting it on argv — where
@@ -28,7 +27,7 @@ func ReadSecret(in io.Reader, flagVal string) (string, error) {
 	if flagVal != "" {
 		return flagVal, nil
 	}
-	if isInteractive(in) {
+	if term.IsTerminalReader(in) {
 		return "", nil
 	}
 	b, err := io.ReadAll(in)
@@ -74,7 +73,7 @@ func ReadSecrets(in io.Reader, fields ...*string) error {
 // readSecretLines reads the piped stream once and returns its non-empty,
 // trimmed lines. Returns nil when in is an interactive terminal (no pipe).
 func readSecretLines(in io.Reader) ([]string, error) {
-	if isInteractive(in) {
+	if term.IsTerminalReader(in) {
 		return nil, nil
 	}
 	b, err := io.ReadAll(in)
@@ -88,16 +87,4 @@ func readSecretLines(in io.Reader) ([]string, error) {
 		}
 	}
 	return out, nil
-}
-
-// isInteractive reports whether in is a terminal. Only an *os.File can be one;
-// a pipe, a redirected file, or a test buffer is treated as non-interactive, so
-// piped secrets are read while an interactive shell is not blocked on stdin.
-func isInteractive(in io.Reader) bool {
-	f, ok := in.(*os.File)
-	if !ok {
-		return false
-	}
-	fd := f.Fd()
-	return isatty.IsTerminal(fd) || isatty.IsCygwinTerminal(fd)
 }

@@ -25,9 +25,22 @@ import (
 // auto decision keeps machine-piped and captured output clean.
 func IsTerminal(w io.Writer) bool {
 	f, ok := w.(*os.File)
-	if !ok {
-		return false
-	}
+	return ok && fileIsTerminal(f)
+}
+
+// IsTerminalReader is the reader-typed companion to IsTerminal, for stdin-side
+// checks — e.g. deciding whether to read a piped secret or steer the user to an
+// interactive prompt. Only an *os.File can be a terminal; any other reader (a
+// pipe, a bytes.Buffer or strings.Reader in tests) is treated as non-terminal.
+func IsTerminalReader(r io.Reader) bool {
+	f, ok := r.(*os.File)
+	return ok && fileIsTerminal(f)
+}
+
+// fileIsTerminal is the single isatty seam shared by the writer- and
+// reader-typed entry points, keeping the go-isatty dependency in this one
+// package (see cli/color.go on why that dependency is quarantined here).
+func fileIsTerminal(f *os.File) bool {
 	fd := f.Fd()
 	return isatty.IsTerminal(fd) || isatty.IsCygwinTerminal(fd)
 }
