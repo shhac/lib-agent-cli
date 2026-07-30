@@ -41,12 +41,41 @@ func encode(v any) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// orderedMapping renders an output.Ordered as an explicit YAML mapping node.
+// This is the half of ordered encoding that cannot live in lib-agent-output:
+// that package is dependency-free and yaml.v3 has no ordered map type, so
+// preserving field order means building a *yaml.Node — which requires the
+// dependency this package carries. Without it, an index key spec or an echoed
+// query filter would come out of `--format yaml` alphabetized, describing
+// something other than what ran.
+type orderedMapping output.Ordered
+
+func (o orderedMapping) MarshalYAML() (any, error) {
+	node := &yaml.Node{Kind: yaml.MappingNode}
+	for _, field := range o {
+		key := &yaml.Node{}
+		if err := key.Encode(field.Key); err != nil {
+			return nil, err
+		}
+		value := &yaml.Node{}
+		if err := value.Encode(normalizeNumbers(field.Value)); err != nil {
+			return nil, err
+		}
+		node.Content = append(node.Content, key, value)
+	}
+	return node, nil
+}
+
 // normalizeNumbers converts whole-valued float64s (which JSON decoding produces
 // for every number) to int64, so an ID or count renders as "1500000" rather
 // than yaml.v3's default scientific notation "1.5e+06". Fractional values are
-// left untouched.
+// left untouched. It also routes ordered documents through orderedMapping, so
+// field order survives — a walk that doesn't recognize a container type passes
+// it through unnormalized, and for Ordered that means losing the order.
 func normalizeNumbers(v any) any {
 	switch val := v.(type) {
+	case output.Ordered:
+		return orderedMapping(val)
 	case map[string]any:
 		out := make(map[string]any, len(val))
 		for k, child := range val {

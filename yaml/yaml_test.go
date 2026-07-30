@@ -75,3 +75,94 @@ func TestNormalizeNumbers(t *testing.T) {
 		t.Errorf("nested whole float not converted: %#v", nested)
 	}
 }
+
+// Ordered documents must keep their field order through `--format yaml`, the
+// same as through JSON and NDJSON. yaml.v3 has no ordered map type, so this is
+// the half of the guarantee lib-agent-output cannot provide on its own.
+func TestEncodePreservesOrderedFieldOrder(t *testing.T) {
+	tests := []struct {
+		name string
+		in   any
+		want string
+	}{
+		{
+			name: "reverse-alphabetical order survives",
+			in:   output.Ordered{{Key: "status", Value: 1}, {Key: "expiryDate", Value: 1}},
+			want: "status: 1\nexpiryDate: 1\n",
+		},
+		{
+			name: "nested Ordered keeps its own order",
+			in: output.Ordered{
+				{Key: "name", Value: "status_1_expiryDate_1"},
+				{Key: "key", Value: output.Ordered{{Key: "status", Value: 1}, {Key: "expiryDate", Value: 1}}},
+			},
+			want: "name: status_1_expiryDate_1\nkey:\n  status: 1\n  expiryDate: 1\n",
+		},
+		{
+			name: "nulls survive",
+			in:   output.Ordered{{Key: "deletedAt", Value: nil}, {Key: "name", Value: "x"}},
+			want: "deletedAt: null\nname: x\n",
+		},
+		{
+			name: "Ordered inside a slice",
+			in:   []any{output.Ordered{{Key: "b", Value: 1}, {Key: "a", Value: 2}}},
+			want: "- b: 1\n  a: 2\n",
+		},
+		{
+			name: "Ordered inside a map",
+			in:   map[string]any{"filter": output.Ordered{{Key: "z", Value: 1}, {Key: "a", Value: 2}}},
+			want: "filter:\n  z: 1\n  a: 2\n",
+		},
+		{
+			name: "empty Ordered",
+			in:   output.Ordered{},
+			want: "{}\n",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := encode(tc.in)
+			if err != nil {
+				t.Fatalf("encode: %v", err)
+			}
+			if string(got) != tc.want {
+				t.Errorf("got %q want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The whole-float fix must reach inside an Ordered too — that walk previously
+// only descended maps and slices, so a large double in an ordered document
+// rendered as 1.5e+06 while the same value in a map rendered as 1500000.
+func TestEncodeNormalizesNumbersInsideOrdered(t *testing.T) {
+	got, err := encode(output.Ordered{
+		{Key: "big", Value: float64(1500000)},
+		{Key: "ratio", Value: 1.5},
+		{Key: "nested", Value: output.Ordered{{Key: "also", Value: float64(2000000)}}},
+	})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	want := "big: 1500000\nratio: 1.5\nnested:\n  also: 2000000\n"
+	if string(got) != want {
+		t.Errorf("got %q want %q", got, want)
+	}
+}
+
+// End to end through the registered encoder, which is how a CLI reaches it.
+func TestRegisteredEncoderEmitsOrderedYAML(t *testing.T) {
+	var buf bytes.Buffer
+	spec := output.Ordered{
+		{Key: "name", Value: "status_1_expiryDate_1"},
+		{Key: "key", Value: output.Ordered{{Key: "status", Value: 1}, {Key: "expiryDate", Value: 1}}},
+	}
+	if err := output.Print(&buf, spec, output.FormatYAML, output.PruneEmpty); err != nil {
+		t.Fatalf("Print: %v", err)
+	}
+	want := "name: status_1_expiryDate_1\nkey:\n  status: 1\n  expiryDate: 1\n"
+	if buf.String() != want {
+		t.Errorf("got %q want %q", buf.String(), want)
+	}
+}
