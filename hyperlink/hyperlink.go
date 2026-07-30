@@ -28,7 +28,7 @@ type Mode = term.Mode
 const (
 	ModeOff  = term.Off  // never emit hyperlinks — the safe default
 	ModeAuto = term.Auto // emit when the stream is a terminal
-	ModeOn   = term.On    // force regardless of TTY (like --color always)
+	ModeOn   = term.On   // force regardless of TTY (like --color always)
 )
 
 // ParseMode maps a --hyperlinks flag value to a Mode. Empty is ModeOff.
