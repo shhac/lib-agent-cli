@@ -79,6 +79,29 @@ func (s Store) Update(v any, mutate func() error) error {
 	return s.writeAtomic(v)
 }
 
+// WithLock runs fn holding the store's exclusive lock, without imposing any
+// load/save shape on it.
+//
+// Update is the convenience for the common case; this is for a store that
+// cannot use it — one whose load hydrates secrets from an OS keychain and whose
+// save pushes them back, so the critical section has to span more than a JSON
+// round-trip. Wrapping an existing Load → mutate → Save in WithLock is the
+// smallest change that makes such a store safe, with no restructuring.
+//
+// The same lock backs Update, so callers can mix the two against one store and
+// still serialize correctly.
+func (s Store) WithLock(fn func() error) error {
+	if err := os.MkdirAll(filepath.Dir(s.Path), 0o700); err != nil {
+		return err
+	}
+	unlock, err := lockStore(s.Path)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return fn()
+}
+
 // writeAtomic writes v to a temporary file in the same directory and renames it
 // over the target.
 //

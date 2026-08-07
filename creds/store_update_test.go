@@ -152,3 +152,61 @@ func TestAtomicWriteKeeps0600(t *testing.T) {
 		t.Errorf("file perms = %o, want 600", perm)
 	}
 }
+
+// WithLock must serialize against Update — a store that mixes the two (say, a
+// keychain-hydrating credential file and a plain config file at the same path)
+// would otherwise have two critical sections that do not exclude each other.
+func TestWithLockSerializesAgainstUpdate(t *testing.T) {
+	s := Store{Path: filepath.Join(t.TempDir(), "credentials.json")}
+
+	const writers = 20
+	var wg sync.WaitGroup
+	for i := range writers {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			// Half go through Update, half hand-roll load/mutate/save inside
+			// WithLock — the shape a keychain-backed store is stuck with.
+			if i%2 == 0 {
+				var doc entries
+				_ = s.Update(&doc, func() error {
+					if doc.Items == nil {
+						doc.Items = map[string]string{}
+					}
+					doc.Items[fmt.Sprintf("p%02d", i)] = "x"
+					return nil
+				})
+				return
+			}
+			_ = s.WithLock(func() error {
+				var doc entries
+				if err := s.Load(&doc); err != nil {
+					return err
+				}
+				if doc.Items == nil {
+					doc.Items = map[string]string{}
+				}
+				doc.Items[fmt.Sprintf("p%02d", i)] = "x"
+				return s.Save(&doc)
+			})
+		}(i)
+	}
+	wg.Wait()
+
+	var final entries
+	if err := s.Load(&final); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(final.Items) != writers {
+		t.Errorf("%d of %d survived — WithLock and Update do not share a lock", len(final.Items), writers)
+	}
+}
+
+func TestWithLockPropagatesTheCallbackError(t *testing.T) {
+	s := Store{Path: filepath.Join(t.TempDir(), "credentials.json")}
+	want := fmt.Errorf("boom")
+
+	if got := s.WithLock(func() error { return want }); got != want {
+		t.Errorf("WithLock should return the callback's error, got %v", got)
+	}
+}
