@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 )
 
 // Store is a JSON file holding credentials/config. Saves use 0600 permissions
@@ -11,6 +12,25 @@ import (
 // get that right, instead of a copy per CLI.
 type Store struct {
 	Path string
+
+	// Overlay writes the value OVER the stored document rather than in place
+	// of it, for a config a human reads and edits. Off by default: a
+	// credential store is written wholly by the struct, and preserving a key
+	// nothing recognises there would be a way to keep a secret alive past the
+	// code that knew about it.
+	//
+	// With it on, a save preserves everything the struct cannot see — the
+	// "//" annotations documented in document.go, and keys written by a newer
+	// version of the tool — and lays notes out beside the keys they document.
+	// A key the SCHEMA owns but the value no longer states is still removed,
+	// so unsetting a field works exactly as before; see overlay.
+	//
+	// Two rules worth knowing before turning it on. Entries of a map-typed
+	// field are owned by the struct, so one it no longer lists is deleted
+	// (inside an entry, stray keys still survive). Arrays replace wholesale,
+	// their elements having no identity to merge on, so this is the one place
+	// an unrecognised key does not survive.
+	Overlay bool
 }
 
 // Load decodes the store's JSON into v. A missing or empty file is not an
@@ -112,7 +132,11 @@ func (s Store) WithLock(fn func() error) error {
 // one. The temp file is created in the SAME directory to keep the rename within
 // one filesystem, where cross-device renames would fail.
 func (s Store) writeAtomic(v any) error {
-	data, err := json.MarshalIndent(v, "", "  ")
+	payload, err := s.payload(v)
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -146,4 +170,25 @@ func (s Store) writeAtomic(v any) error {
 		return err
 	}
 	return os.Rename(tmpName, s.Path)
+}
+
+// payload is what actually gets marshalled: v itself, or — when Overlay is
+// set — v laid over the stored document and ordered for reading.
+//
+// A stored document that will not parse is treated as absent rather than
+// failing the write, matching Load's tolerance of a corrupt file: a config
+// nobody can parse should not also be a config nobody can fix.
+func (s Store) payload(v any) (any, error) {
+	if !s.Overlay {
+		return v, nil
+	}
+	fresh, err := structDoc(v)
+	if err != nil {
+		return nil, err
+	}
+	var stored map[string]any
+	if data, err := os.ReadFile(s.Path); err == nil {
+		stored, _ = decodeDoc(data)
+	}
+	return ordered(overlay(stored, fresh, deref(reflect.TypeOf(v)))), nil
 }

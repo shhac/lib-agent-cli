@@ -120,3 +120,47 @@ settled pattern, proven by lin and adopted by agent-sql:
   the same `AllowFormats` annotation that gates the validator, checked with
   `FormatAllowed`. One annotation is the source of truth for a domain format's
   whole reach: flag validity and default applicability.
+
+## A config a human edits is not a credentials file (September 2026)
+
+`creds.Store` was built for credentials: a small document written wholly by
+its struct, where `Save` marshalling the struct and replacing the file is
+exactly right. Config files reached for the same store, and inherited a rule
+that does not fit them.
+
+Two things a config has that a credentials file does not. It carries
+**comments** — JSON has none, so the family writes them as `"//"` keys, the
+npm convention — and it **outlives the release that wrote it**, so it can hold
+a key only a newer build understands. A struct has a field for neither, so a
+load-modify-save dropped both: changing one unrelated setting stripped a
+config's entire documentation, and silently discarded a setting the next
+release would have read. Consuming CLIs did not notice, because nothing errors
+— the file simply comes back smaller.
+
+`Store.Overlay` lays the struct's view over the stored document rather than
+replacing it. The rule that makes it precise rather than a guess is the
+schema: a key the struct's json tags OWN but the value no longer states was
+unset and must go, while a key with no field was never ours to remove. Without
+that distinction the merge would preserve everything and `unset` would
+silently stop working.
+
+Two decisions inside it are worth recording because they are not forced:
+
+- **Map entries are owned, their contents are not.** The struct round-trips a
+  whole map, so an entry it no longer lists was deleted. Inside an entry the
+  element's schema applies again, so a stray key there survives.
+- **Arrays replace wholesale.** Their elements have no identity to merge on,
+  so the struct's list is the answer. This is the one place an unrecognised
+  key does not survive, and it is a choice rather than an oversight.
+
+Layout is a sort rather than a preserved order: a note sorts as the key it
+documents, ties breaking note-first, so a pinned pair is indivisible and
+nothing lands between a comment and its subject. Order is then a pure function
+of the key set — the same content writes the same bytes, and a note dropped
+anywhere in an object migrates beside its key on the next write. Preserving
+the input order instead was considered and rejected: it is faithful to
+whatever the file already contains, where a sort is self-healing.
+
+It is **opt-in**. Preserving an unrecognised key in a credentials store would
+be a way to keep a secret alive past the code that knew about it, which is the
+opposite of what that store is for.
