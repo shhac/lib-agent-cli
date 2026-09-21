@@ -263,3 +263,81 @@ func TestOrderedSurvivesMarshalling(t *testing.T) {
 		t.Errorf("a note inside an array element must precede its key:\n%s", text)
 	}
 }
+
+// RawDelete rewrites the whole document, so it must not also be laid over the
+// file it came from: under a type with no schema fields every stored key is
+// one nothing owns, which would restore the key just removed.
+func TestRawDeleteRemovesTheKeyAndKeepsTheRest(t *testing.T) {
+	s := writeStore(t, `{"//user_note": "n", "user": "ada", "retired": {"percent": 30}, "other": 1}`)
+
+	removed, err := s.RawDelete("retired")
+	if err != nil || !removed {
+		t.Fatalf("RawDelete = %v, %v; want removed", removed, err)
+	}
+	if _, found := s.RawValue("retired"); found {
+		t.Error("the key survived its own deletion")
+	}
+	for _, kept := range []string{"//user_note", "user", "other"} {
+		if _, found := s.RawValue(kept); !found {
+			t.Errorf("%q did not survive an unrelated delete", kept)
+		}
+	}
+}
+
+func TestRawDeleteReportsAMissingKey(t *testing.T) {
+	s := writeStore(t, `{"user": "ada"}`)
+	removed, err := s.RawDelete("nothing.here")
+	if err != nil || removed {
+		t.Errorf("RawDelete = %v, %v; want not-removed and no error", removed, err)
+	}
+}
+
+func TestRawValueReachesNestedPaths(t *testing.T) {
+	s := writeStore(t, `{"engine": {"bin": "codex", "limits": {"percent": 30}}}`)
+	if v, ok := s.RawValue("engine.bin"); !ok || v != "codex" {
+		t.Errorf("RawValue = %q, %v; want codex", v, ok)
+	}
+	if v, ok := s.RawValue("engine.limits"); !ok || !strings.Contains(v, "30") {
+		t.Errorf("RawValue of an object = %q, %v; want its JSON", v, ok)
+	}
+	if _, ok := s.RawValue("engine.bin.deeper"); ok {
+		t.Error("a path through a scalar must report missing, not panic")
+	}
+}
+
+// The walk stops at the outermost key it cannot place, so a whole retired
+// section reports once with its contents rather than once per leaf.
+func TestUnknownKeysReportsWhatTheSchemaLacks(t *testing.T) {
+	s := writeStore(t, `{
+	  "//why": "an annotation, not a finding",
+	  "user": "ada",
+	  "engine": {"bin": "codex", "turbo": true},
+	  "groups": {"core": {"review": "approve", "vibes": "good"}},
+	  "retired": {"percent": 30, "other": 1}
+	}`)
+	var paths []string
+	for _, k := range s.UnknownKeys(testConfig{}) {
+		paths = append(paths, k.Path)
+	}
+	want := []string{"engine.turbo", "groups.core.vibes", "retired"}
+	if strings.Join(paths, ",") != strings.Join(want, ",") {
+		t.Errorf("UnknownKeys = %v, want %v", paths, want)
+	}
+	for _, k := range s.UnknownKeys(testConfig{}) {
+		if k.Path == "retired" && !strings.Contains(k.Value, "30") {
+			t.Errorf("a retired section must report what it held, got %q", k.Value)
+		}
+	}
+}
+
+// An annotated config must not warn about its own annotations, and a file
+// nobody can parse is a different complaint.
+func TestUnknownKeysToleratesCorruptAndIgnoresNotes(t *testing.T) {
+	if got := writeStore(t, "{not json").UnknownKeys(testConfig{}); got != nil {
+		t.Errorf("a corrupt document must report nothing, got %v", got)
+	}
+	s := writeStore(t, `{"//user_note": "n", "//why": "c", "user": "ada"}`)
+	if got := s.UnknownKeys(&testConfig{}); len(got) != 0 {
+		t.Errorf("annotations are not unknown keys: %v", got)
+	}
+}

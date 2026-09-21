@@ -31,7 +31,11 @@ type ConfigKey struct {
 // default, the bare object (get/set/unset) or {"data":[…]} envelope (list)
 // under json|yaml. A nil g always emits NDJSON. Unknown keys produce a
 // fixable_by:agent error listing the valid ones.
-func ConfigCommand(g *Globals, keys []ConfigKey) *cobra.Command {
+func ConfigCommand(g *Globals, keys []ConfigKey, opts ...ConfigOption) *cobra.Command {
+	var options configOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
 	byName := make(map[string]ConfigKey, len(keys))
 	for _, k := range keys {
 		byName[k.Name] = k
@@ -122,6 +126,19 @@ func ConfigCommand(g *Globals, keys []ConfigKey) *cobra.Command {
 			}
 			return output.WriteList(cmd.OutOrStdout(), f, items, nil, nil)
 		},
+	}
+
+	// A document the registry cannot fully describe: let get and unset reach
+	// what it holds. Wrapping the built RunE rather than replacing it keeps
+	// every registered key on the library's exact path, error text and output
+	// shape included.
+	if options.store != nil {
+		known := make(map[string]bool, len(keys))
+		for _, k := range keys {
+			known[k.Name] = true
+		}
+		get.RunE = documentFallback(get.RunE, known, options.store, options.getUnknown(g))
+		unset.RunE = documentFallback(unset.RunE, known, options.store, options.unsetUnknown(g))
 	}
 
 	cfg.AddCommand(get, set, unset, list)

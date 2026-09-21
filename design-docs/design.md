@@ -164,3 +164,41 @@ whatever the file already contains, where a sort is self-healing.
 It is **opt-in**. Preserving an unrecognised key in a credentials store would
 be a way to keep a secret alive past the code that knew about it, which is the
 opposite of what that store is for.
+
+## Getting at a key the registry does not have (September 2026)
+
+`Overlay` stops a save destroying a key the schema cannot see, but preserving
+one is not surfacing it: a typo, a key from a newer build, and a key this
+release renamed all behave exactly like a key nobody ever wrote. The setting
+is not in effect and nothing says so — and `config get`, the one command that
+could show what it holds, answers "unknown config key", which is true of the
+schema and unhelpful about the document.
+
+`creds` gained the reads (`UnknownKeys`, `RawValue`, `RawDelete`) and `cli`
+the wiring (`ConfigCommand(..., WithDocument(store, schema))`), which extends
+`get` and `unset` to keys the document holds and the registry lacks. Three
+boundaries worth recording:
+
+- **`set` is not extended.** A key nothing reads is not a setting, and writing
+  one would manufacture the state this exists to clear.
+- **A typo still reaches the library.** A name in neither the registry nor the
+  document keeps its "unknown config key" error and the list of valid names,
+  which is what a typo actually needs. Only a name the document *holds* takes
+  the fallback.
+- **Opt-in, and it has to be.** `ConfigCommand` knows the key closures, not
+  the store behind them, so it cannot do this unasked. A CLI that wants its
+  own behaviour passes no option and nothing changes.
+
+The discriminator is the registry, not the library's error class. An earlier
+version in a consuming CLI classified `FixableByAgent` as "unknown key", but
+`ConfigCommand` returns that same class when a KNOWN key's `Unset` fails — so
+a failed unset of a key whose CLI name matches its file path would fall
+through and delete it from the document, reporting as success the write the
+library had just refused.
+
+`SectionKey` covers the other half: `unset` on a group of keys, to put a whole
+section back to defaults. Clearing must go through the struct — deleting the
+section from the document alone would last until the next save wrote it back —
+so the clearing closure is the CLI's, and the library supplies only the shape:
+`set` explains that a section is not a value rather than reporting it
+read-only, which it is not.
