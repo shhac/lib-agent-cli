@@ -181,11 +181,11 @@ func overlay(stored, fresh map[string]any, t reflect.Type) map[string]any {
 			out[key] = value
 			continue
 		}
-		switch next := deref(field); next.Kind() {
-		case reflect.Struct:
+		switch kind, next := descend(field); kind {
+		case structNode:
 			out[key] = overlay(prior, child, next)
-		case reflect.Map:
-			out[key] = overlayEntries(prior, child, deref(next.Elem()))
+		case mapNode:
+			out[key] = overlayEntries(prior, child, next)
 		default:
 			out[key] = value
 		}
@@ -199,12 +199,13 @@ func overlay(stored, fresh map[string]any, t reflect.Type) map[string]any {
 // never claimed. Inside an entry the element's own schema applies again, so a
 // stray key there lives on.
 func overlayEntries(stored, fresh map[string]any, elem reflect.Type) map[string]any {
+	kind, next := descend(elem)
 	out := make(map[string]any, len(fresh))
 	for key, value := range fresh {
 		child, freshIsObject := value.(map[string]any)
 		prior, storedIsObject := stored[key].(map[string]any)
-		if freshIsObject && storedIsObject && elem.Kind() == reflect.Struct {
-			out[key] = overlay(prior, child, elem)
+		if freshIsObject && storedIsObject && kind == structNode {
+			out[key] = overlay(prior, child, next)
 			continue
 		}
 		out[key] = value
@@ -257,6 +258,40 @@ func jsonFields(t reflect.Type) map[string]reflect.Type {
 		out[name] = f.Type
 	}
 	return out
+}
+
+// node is how the schema continues below a field: what, if anything,
+// describes the keys of an object stored there.
+type node int
+
+const (
+	// leafNode: the schema says nothing below this field, so its value is owned
+	// whole, whether a scalar, an array, or a free-form object.
+	leafNode node = iota
+	// structNode: a struct, whose json fields are the keys one level down.
+	structNode
+	// mapNode: a map, whose keys are data and whose values are each
+	// described by the element type.
+	mapNode
+)
+
+// descend classifies a field's type, returning the type that describes the
+// next level down: the struct for a structNode, the element type for a
+// mapNode. Every walk over document and schema together asks this one
+// question, so they cannot disagree about where the schema ends.
+func descend(field reflect.Type) (node, reflect.Type) {
+	t := deref(field)
+	if t == nil {
+		return leafNode, nil
+	}
+	switch t.Kind() {
+	case reflect.Struct:
+		return structNode, t
+	case reflect.Map:
+		return mapNode, deref(t.Elem())
+	default:
+		return leafNode, nil
+	}
 }
 
 func deref(t reflect.Type) reflect.Type {

@@ -117,15 +117,15 @@ func walkUnknown(doc map[string]any, t reflect.Type, prefix string, found *[]Unk
 		if !isObject {
 			continue
 		}
-		switch next := deref(field); next.Kind() {
-		case reflect.Struct:
+		switch kind, next := descend(field); kind {
+		case structNode:
 			walkUnknown(child, next, path, found)
-		case reflect.Map:
+		case mapNode:
 			// A map's keys are data, not field names, so only its VALUES are
 			// described by the schema.
 			for name, entry := range child {
 				if sub, ok := entry.(map[string]any); ok {
-					walkUnknown(sub, deref(next.Elem()), path+"."+name, found)
+					walkUnknown(sub, next, path+"."+name, found)
 				}
 			}
 		}
