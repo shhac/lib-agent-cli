@@ -96,14 +96,13 @@ func (s Store) RawDelete(path string) (bool, error) {
 		if removed = deletePath(doc, strings.Split(path, ".")); !removed {
 			return nil
 		}
-		// Written WITHOUT the overlay: doc is already the whole document, so
-		// there is nothing to lay it over. Sent through the overlay it would
-		// be merged against the file it came from, under a type with no
-		// schema fields — which makes every stored key one nothing owns, and
-		// restores the key just deleted.
-		plain := s
-		plain.Overlay = false
-		return plain.writeAtomic(ordered(doc))
+		// doc is already the whole document, so it is written as it stands:
+		// there is no struct view to lay over anything.
+		data, err = encodeDoc(ordered(doc))
+		if err != nil {
+			return err
+		}
+		return writeFileAtomic(s.Path, data)
 	})
 	return removed, err
 }

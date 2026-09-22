@@ -11,10 +11,10 @@ import (
 // release function.
 //
 // The lock is held on a sidecar ".lock" file rather than on the store itself,
-// because writeAtomic replaces the store by renaming a new file over it: a lock
-// held on the store's own descriptor would refer to the OLD inode the moment
-// the first writer finished, and would guard nothing. The sidecar's inode is
-// stable, so every process ends up contending on the same object.
+// because writeFileAtomic replaces the store by renaming a new file over it: a
+// lock held on the store's own descriptor would refer to the OLD inode the
+// moment the first writer finished, and would guard nothing. The sidecar's
+// inode is stable, so every process ends up contending on the same object.
 //
 // flock is advisory and released automatically when the descriptor closes —
 // including on process death — so a crashed writer cannot wedge the store the

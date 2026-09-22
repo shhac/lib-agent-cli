@@ -53,15 +53,15 @@ func (s Store) Load(v any) error {
 // Save writes v as indented JSON, creating parent directories (0700) and
 // writing the file 0600.
 //
-// The write is atomic: see writeAtomic. Save does NOT lock, so two processes
-// each doing Load → mutate → Save can still lose an update — the second write
-// is built from a snapshot taken before the first landed. Use Update for any
-// read-modify-write.
+// The write is atomic: see writeFileAtomic. Save does NOT lock, so two
+// processes each doing Load → mutate → Save can still lose an update — the
+// second write is built from a snapshot taken before the first landed. Use
+// Update for any read-modify-write.
 func (s Store) Save(v any) error {
 	if err := os.MkdirAll(filepath.Dir(s.Path), 0o700); err != nil {
 		return err
 	}
-	return s.writeAtomic(v)
+	return s.write(v)
 }
 
 // Update runs a read-modify-write under an exclusive lock: it Loads into v,
@@ -80,23 +80,15 @@ func (s Store) Save(v any) error {
 // from mutate aborts without writing, so a failed validation leaves the stored
 // document untouched.
 func (s Store) Update(v any, mutate func() error) error {
-	if err := os.MkdirAll(filepath.Dir(s.Path), 0o700); err != nil {
-		return err
-	}
-
-	unlock, err := lockStore(s.Path)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-
-	if err := s.Load(v); err != nil {
-		return err
-	}
-	if err := mutate(); err != nil {
-		return err
-	}
-	return s.writeAtomic(v)
+	return s.WithLock(func() error {
+		if err := s.Load(v); err != nil {
+			return err
+		}
+		if err := mutate(); err != nil {
+			return err
+		}
+		return s.write(v)
+	})
 }
 
 // WithLock runs fn holding the store's exclusive lock, without imposing any
@@ -122,8 +114,31 @@ func (s Store) WithLock(fn func() error) error {
 	return fn()
 }
 
-// writeAtomic writes v to a temporary file in the same directory and renames it
-// over the target.
+// write is the struct-to-file path shared by Save and Update.
+func (s Store) write(v any) error {
+	payload, err := s.payload(v)
+	if err != nil {
+		return err
+	}
+	data, err := encodeDoc(payload)
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(s.Path, data)
+}
+
+// encodeDoc is the on-disk form: indented, with a trailing newline so the
+// file ends the way an editor would leave it.
+func encodeDoc(v any) ([]byte, error) {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
+
+// writeFileAtomic writes data to a temporary file in the same directory and
+// renames it over path.
 //
 // os.WriteFile truncates first and then writes, so a crash, a full disk, or a
 // reader arriving mid-write can see a partial document — for a credential store
@@ -131,19 +146,8 @@ func (s Store) WithLock(fn func() error) error {
 // atomic on POSIX, so a reader sees either the whole old file or the whole new
 // one. The temp file is created in the SAME directory to keep the rename within
 // one filesystem, where cross-device renames would fail.
-func (s Store) writeAtomic(v any) error {
-	payload, err := s.payload(v)
-	if err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		return err
-	}
-	data = append(data, '\n')
-
-	dir := filepath.Dir(s.Path)
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(s.Path)+".tmp-*")
+func writeFileAtomic(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
 	}
@@ -169,7 +173,7 @@ func (s Store) writeAtomic(v any) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, s.Path)
+	return os.Rename(tmpName, path)
 }
 
 // payload is what actually gets marshalled: v itself, or — when Overlay is
