@@ -129,28 +129,24 @@ func classifyResolveErr(id string, err error) (rec *unresolvedRecord, fatal bool
 	if !output.As(err, &apiErr) {
 		return nil, true // unclassified → safest to treat as a real failure
 	}
+	rec = &unresolvedRecord{
+		ID:        id,
+		Reason:    apiErr.Message,
+		FixableBy: string(apiErr.FixableBy),
+		Hint:      apiErr.Hint,
+	}
 	switch apiErr.FixableBy {
 	case output.FixableByAgent:
-		return &unresolvedRecord{
-			ID:        id,
-			Reason:    apiErr.Message,
-			FixableBy: string(output.FixableByAgent),
-			Hint:      apiErr.Hint,
-		}, false
+		return rec, false
 	case output.FixableByRetry:
 		// A rate-limit (429) carries a retry-after and is a per-item miss; a
 		// bare retryable (network/5xx) is a command-level failure of the run.
 		if apiErr.RetryAfterSeconds > 0 {
-			return &unresolvedRecord{
-				ID:                id,
-				Reason:            apiErr.Message,
-				FixableBy:         string(output.FixableByRetry),
-				Hint:              apiErr.Hint,
-				RetryAfterSeconds: apiErr.RetryAfterSeconds,
-			}, false
+			rec.RetryAfterSeconds = apiErr.RetryAfterSeconds
+			return rec, false
 		}
-		return nil, true
-	default: // FixableByHuman, or any other classification → command-level
-		return nil, true
 	}
+	// FixableByHuman, a bare retryable, or any other classification →
+	// command-level.
+	return nil, true
 }
