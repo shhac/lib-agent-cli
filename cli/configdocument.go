@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"strings"
+
 	output "github.com/shhac/lib-agent-output"
 	"github.com/spf13/cobra"
 
@@ -32,7 +34,10 @@ type configOptions struct {
 
 // WithDocument lets `get` and `unset` reach keys the stored document holds but
 // the registry does not, reading and editing s directly. schema is a prototype
-// of the config struct, used only for its type.
+// of the config struct, used for its type: it is what tells a key the schema
+// has no field for (a typo, a retired or newer setting; known_key false) from
+// one the schema models and the registry simply does not register (known_key
+// true, since that setting is in effect).
 //
 // `set` is deliberately not extended. A key nothing reads is not a setting,
 // and writing one would recreate the state this exists to clear.
@@ -55,40 +60,52 @@ func WithDocument(s creds.Store, schema any) ConfigOption {
 func documentFallback(
 	lib func(*cobra.Command, []string) error,
 	known map[string]bool,
-	store *creds.Store,
-	handle func(cmd *cobra.Command, key, value string) error,
+	doc configOptions,
+	handle func(cmd *cobra.Command, key, value string, modelled bool) error,
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		key := args[0] // every one of these subcommands is cobra.ExactArgs(1)
 		if known[key] {
 			return lib(cmd, args)
 		}
-		value, found := store.RawValue(key)
+		value, found := doc.store.RawValue(key)
 		if !found {
 			return lib(cmd, args)
 		}
-		return handle(cmd, key, value)
+		// Decided before handle runs, because unset is about to remove the
+		// very key that decides it.
+		return handle(cmd, key, value, schemaModels(doc.store, doc.schema, key))
 	}
 }
 
-// getUnknown reports a value the wrapper already read, so a get on a stray key
-// parses the document once rather than twice. known_key marks the record as
-// describing something the schema does not model.
-func getUnknown(g *Globals) func(*cobra.Command, string, string) error {
-	return func(cmd *cobra.Command, key, value string) error {
+// schemaModels reports whether the schema has a field at key: true unless
+// key is, or sits inside, a path UnknownKeys reports.
+func schemaModels(store *creds.Store, schema any, key string) bool {
+	for _, unknown := range store.UnknownKeys(schema) {
+		if key == unknown.Path || strings.HasPrefix(key, unknown.Path+".") {
+			return false
+		}
+	}
+	return true
+}
+
+// getFromDocument reports a value the wrapper already read. known_key says
+// whether the schema models the key, which the registry alone cannot.
+func getFromDocument(g *Globals) func(*cobra.Command, string, string, bool) error {
+	return func(cmd *cobra.Command, key, value string, modelled bool) error {
 		return EmitItem(cmd.OutOrStdout(), g.format(),
-			map[string]any{"key": key, "value": value, "set": true, "known_key": false})
+			map[string]any{"key": key, "value": value, "set": true, "known_key": modelled})
 	}
 }
 
-func unsetUnknown(g *Globals, store *creds.Store) func(*cobra.Command, string, string) error {
-	return func(cmd *cobra.Command, key, _ string) error {
+func unsetFromDocument(g *Globals, store *creds.Store) func(*cobra.Command, string, string, bool) error {
+	return func(cmd *cobra.Command, key, _ string, modelled bool) error {
 		removed, err := store.RawDelete(key)
 		if err != nil {
 			return output.Wrap(err, output.FixableByHuman)
 		}
 		return EmitItem(cmd.OutOrStdout(), g.format(),
-			map[string]any{"key": key, "unset": removed, "known_key": false})
+			map[string]any{"key": key, "unset": removed, "known_key": modelled})
 	}
 }
 

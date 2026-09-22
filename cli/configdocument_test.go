@@ -14,7 +14,7 @@ import (
 
 type docConfig struct {
 	User  string `json:"user,omitempty"`
-	Depth int    `json:"depth,omitempty"`
+	Depth int    `json:"depth,omitempty"` // modelled, deliberately not registered
 }
 
 // docFixture writes a document holding one registered key and one the schema
@@ -163,5 +163,33 @@ func TestSectionKeyRefusesSetAndClearsOnUnset(t *testing.T) {
 	}
 	if err := key.Unset(); err != nil || !cleared {
 		t.Errorf("unset must clear the section: cleared=%v err=%v", cleared, err)
+	}
+}
+
+// known_key is the schema's answer, not the registry's: a key the struct has
+// a field for is in effect even when nothing registers it, and only a path the
+// schema cannot place (or anything inside one) is reported as unknown.
+func TestWithDocumentKnownKeyFollowsTheSchema(t *testing.T) {
+	const doc = `{"user": "ada", "depth": 3, "retired": {"percent": 30}}`
+	for _, tc := range []struct {
+		verb, key string
+		known     bool
+	}{
+		{"get", "depth", true},
+		{"get", "retired", false},
+		{"get", "retired.percent", false},
+		{"unset", "depth", true},
+		{"unset", "retired", false},
+	} {
+		t.Run(tc.verb+" "+tc.key, func(t *testing.T) {
+			cmd, _ := docFixture(t, doc)
+			rec, err := runCmd(t, cmd, tc.verb, tc.key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rec["known_key"] != tc.known {
+				t.Errorf("known_key = %v, want %v: %+v", rec["known_key"], tc.known, rec)
+			}
+		})
 	}
 }
