@@ -5,7 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
+
+	"github.com/shhac/lib-agent-cli/internal/jsondoc"
 )
 
 // Store is a JSON file holding credentials/config. Saves use 0600 permissions
@@ -21,10 +22,11 @@ type Store struct {
 	// code that knew about it.
 	//
 	// With it on, a save preserves everything the struct cannot see — the
-	// "//" annotations documented in document.go, and keys written by a newer
-	// version of the tool — and lays notes out beside the keys they document.
-	// A key the SCHEMA owns but the value no longer states is still removed,
-	// so unsetting a field works exactly as before; see overlay.
+	// "//" annotations documented in internal/jsondoc, and keys written by a
+	// newer version of the tool — and lays notes out beside the keys they
+	// document. A key the SCHEMA owns but the value no longer states is still
+	// removed, so unsetting a field works exactly as before; see jsondoc's
+	// overlay.
 	//
 	// Two rules worth knowing before turning it on. Entries of a map-typed
 	// field are owned by the struct, so one it no longer lists is deleted
@@ -122,7 +124,7 @@ func (s Store) readDoc() (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	doc, err := decodeDoc(data)
+	doc, err := jsondoc.Decode(data)
 	if err != nil {
 		return nil, malformedError{err}
 	}
@@ -216,13 +218,9 @@ func (s Store) payload(v any) (any, error) {
 	if !s.Overlay {
 		return v, nil
 	}
-	fresh, err := structDoc(v)
-	if err != nil {
-		return nil, err
-	}
 	stored, err := s.readDoc()
 	if err != nil && !os.IsNotExist(err) && !isMalformed(err) {
 		return nil, err
 	}
-	return ordered(overlay(stored, fresh, deref(reflect.TypeOf(v)))), nil
+	return jsondoc.Overlay(stored, v)
 }

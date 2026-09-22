@@ -202,3 +202,19 @@ section from the document alone would last until the next save wrote it back —
 so the clearing closure is the CLI's, and the library supplies only the shape:
 `set` explains that a section is not a value rather than reporting it
 read-only, which it is not.
+
+## The document algebra is not credential code (September 2026)
+
+`creds` is the one audited place for `0600` permissions and keychain handling,
+and the overlay work grew it a second job: the `"//"` note convention, the
+layout sort, the schema-aware merge and the unknown-key walk. By the time it
+shipped, most of the package's code never touched a secret or a file, which
+dilutes exactly the audit the package exists to make cheap.
+
+That half now lives in `internal/jsondoc`. It is pure (decoded maps and
+reflect types in, maps out), so its tests need no filesystem, and a reviewer
+of `creds` reads only the store, the lock, the atomic write and the thin
+methods that hand a decoded document across. It is `internal` because it is
+an implementation of `Store.Overlay`, not a surface: `creds` converts its
+results into its own exported types (`UnknownKey` is a `creds` struct, not an
+alias), so the package can be reshaped without touching any consuming CLI.

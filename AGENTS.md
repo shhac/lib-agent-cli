@@ -22,6 +22,7 @@ survey it came from, and the shared-vs-domain boundary per piece.
 |---|---|
 | `xdg/` | freedesktop dirs `ConfigDir`/`CacheDir`/`DataDir`/`StateDir`/`RuntimeDir` (spec env vars + fallbacks when unset) (+ `App{Name}` bundle) |
 | `creds/` | `Store` (0600 JSON, opt-in `Overlay` for annotated configs; `UnknownKeys`/`RawValue`/`RawDelete` for what the schema cannot see), `Keychain` (macOS `security`), `FirstNonEmpty`/`FirstNonZero`/`Getenv` |
+| `internal/jsondoc/` | the pure document algebra behind `Overlay`: the `"//"` note convention and layout, the schema-aware merge, and the unknown-key walk. No filesystem, no secrets |
 | `cli/` | `NewRoot`+`Options`/`Globals`, `ConfigCommand` (+`WithDocument`/`SectionKey`), `RequireConfirm`/`AddConfirmFlag`, `HandleUnknownCommand`, `Run` |
 | `dialog/` | `Prompter`/`PromptSecret`/`Prompt`/`Available` + neutral `Category`/`ClassifyError` — the `--form` native secret dialog (zenity); no lib-agent-output coupling |
 | `examples/demo/` | the kitchen-sink CLI exercising every package; built + driven by `demo_test.go` |
@@ -59,16 +60,16 @@ here.
   the real keychain; keep it that way. `Available()` gates on `runtime.GOOS`.
 - **Depends on lib-agent-output** (published tag in `go.mod`). The error/format
   contract comes from there; don't re-implement `Error`/`FixableBy`/`Format`.
-  The ordered-JSON emitter is one of those: `creds`'s annotated writer renders
-  through `output.Ordered` rather than carrying a second one with its own
-  escaping decisions.
+  The ordered-JSON emitter is one of those: the annotated writer
+  (`internal/jsondoc`) renders through `output.Ordered` rather than carrying a
+  second one with its own escaping decisions.
 - **Comments in a config file are `"//"` keys.** JSON has none of its own, so
   the family convention (npm's, in `package.json`) is an ordinary key named
   `"//<key>"` or `"//<key>_note"`, which documents the sibling key `<key>`; a
   `"//"` key naming no sibling is commentary on the object it sits in. A
   `Store` with `Overlay` set keeps them through a save and sorts each note
   immediately before the key it documents. Leaving a note anywhere in the
-  object is enough — it moves into place on the next write. `creds/document.go`
+  object is enough — it moves into place on the next write. `internal/jsondoc`
   is the reference.
 
 ## Naming convention (family-wide)

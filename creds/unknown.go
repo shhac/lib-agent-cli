@@ -1,12 +1,6 @@
 package creds
 
-import (
-	"encoding/json"
-	"fmt"
-	"reflect"
-	"sort"
-	"strings"
-)
+import "github.com/shhac/lib-agent-cli/internal/jsondoc"
 
 // What a document says that the struct cannot hear.
 //
@@ -45,8 +39,9 @@ func (s Store) UnknownKeys(schema any) []UnknownKey {
 		return nil
 	}
 	var found []UnknownKey
-	walkUnknown(doc, structType(schema), "", &found)
-	sort.Slice(found, func(i, j int) bool { return found[i].Path < found[j].Path })
+	for _, k := range jsondoc.UnknownKeys(doc, schema) {
+		found = append(found, UnknownKey{Path: k.Path, Value: k.Value})
+	}
 	return found
 }
 
@@ -59,11 +54,11 @@ func (s Store) RawValue(path string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	value, ok := lookupPath(doc, strings.Split(path, "."))
+	value, ok := jsondoc.Lookup(doc, path)
 	if !ok {
 		return "", false
 	}
-	return render(value), true
+	return jsondoc.Render(value), true
 }
 
 // RawDelete removes a dotted path from the stored document, reporting whether
@@ -80,119 +75,16 @@ func (s Store) RawDelete(path string) (bool, error) {
 		if err != nil {
 			return err
 		}
-		if removed = deletePath(doc, strings.Split(path, ".")); !removed {
+		if removed = jsondoc.Delete(doc, path); !removed {
 			return nil
 		}
 		// doc is already the whole document, so it is written as it stands:
 		// there is no struct view to lay over anything.
-		data, err := encodeDoc(ordered(doc))
+		data, err := encodeDoc(jsondoc.Ordered(doc))
 		if err != nil {
 			return err
 		}
 		return writeFileAtomic(s.Path, data)
 	})
 	return removed, err
-}
-
-// walkUnknown descends the document alongside the type that should describe
-// it, collecting what the type cannot account for. It stops at the outermost
-// key it cannot place: a whole retired section reports once, with its
-// contents, rather than once per leaf inside it.
-func walkUnknown(doc map[string]any, t reflect.Type, prefix string, found *[]UnknownKey) {
-	fields := jsonFields(t)
-	for key, value := range doc {
-		if isNote(key) {
-			continue
-		}
-		path := key
-		if prefix != "" {
-			path = prefix + "." + key
-		}
-		field, known := fields[key]
-		if !known {
-			*found = append(*found, UnknownKey{Path: path, Value: render(value)})
-			continue
-		}
-		child, isObject := value.(map[string]any)
-		if !isObject {
-			continue
-		}
-		switch kind, next := descend(field); kind {
-		case structNode:
-			walkUnknown(child, next, path, found)
-		case mapNode:
-			// A map's keys are data, not field names, so only its VALUES are
-			// described by the schema, and only when the element is a struct.
-			// Any other element is free-form data the struct owns whole, as
-			// overlay treats it: its keys are nobody's to call unknown.
-			elemKind, elem := descend(next)
-			if elemKind != structNode {
-				continue
-			}
-			for name, entry := range child {
-				if sub, ok := entry.(map[string]any); ok {
-					walkUnknown(sub, elem, path+"."+name, found)
-				}
-			}
-		}
-	}
-}
-
-// lookupPath walks a dotted path through nested objects.
-func lookupPath(doc map[string]any, path []string) (any, bool) {
-	value, ok := doc[path[0]]
-	if !ok {
-		return nil, false
-	}
-	if len(path) == 1 {
-		return value, true
-	}
-	child, ok := value.(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	return lookupPath(child, path[1:])
-}
-
-// deletePath removes a dotted path, leaving its parents in place: an object
-// that is empty afterwards was still written deliberately, and pruning it
-// would remove more than was asked for.
-func deletePath(doc map[string]any, path []string) bool {
-	if len(path) == 1 {
-		if _, ok := doc[path[0]]; !ok {
-			return false
-		}
-		delete(doc, path[0])
-		return true
-	}
-	child, ok := doc[path[0]].(map[string]any)
-	if !ok {
-		return false
-	}
-	return deletePath(child, path[1:])
-}
-
-// structType is the struct type behind a prototype value, so callers can pass
-// Config{} or &Config{} interchangeably.
-func structType(schema any) reflect.Type {
-	return deref(reflect.TypeOf(schema))
-}
-
-// render prints a value compactly enough for a log line: a string as itself,
-// anything else as its JSON, which is the shortest round-trip form. An empty
-// object renders empty, which reads as "set, but holding nothing".
-func render(v any) string {
-	switch value := v.(type) {
-	case string:
-		return value
-	case map[string]any:
-		if len(value) == 0 {
-			return ""
-		}
-	}
-	out, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Sprintf("%v", v)
-	}
-	return string(out)
 }
