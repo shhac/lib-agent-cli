@@ -122,10 +122,16 @@ func walkUnknown(doc map[string]any, t reflect.Type, prefix string, found *[]Unk
 			walkUnknown(child, next, path, found)
 		case mapNode:
 			// A map's keys are data, not field names, so only its VALUES are
-			// described by the schema.
+			// described by the schema, and only when the element is a struct.
+			// Any other element is free-form data the struct owns whole, as
+			// overlay treats it: its keys are nobody's to call unknown.
+			elemKind, elem := descend(next)
+			if elemKind != structNode {
+				continue
+			}
 			for name, entry := range child {
 				if sub, ok := entry.(map[string]any); ok {
-					walkUnknown(sub, next, path+"."+name, found)
+					walkUnknown(sub, elem, path+"."+name, found)
 				}
 			}
 		}

@@ -479,3 +479,24 @@ func TestUnknownKeysDescendsPointersAndEmbeddedStructs(t *testing.T) {
 		})
 	}
 }
+
+// A map whose element is not a struct is free-form data: overlay owns each
+// entry whole, so nothing inside one is a key the schema failed to model.
+func TestUnknownKeysLeavesFreeFormMapsAlone(t *testing.T) {
+	type freeForm struct {
+		Labels map[string]any               `json:"labels,omitempty"`
+		Env    map[string]map[string]string `json:"env,omitempty"`
+	}
+	s := writeStore(t, `{
+	  "labels": {"team": {"name": "core", "size": 4}, "tier": "gold"},
+	  "env": {"prod": {"REGION": "eu"}, "dev": {"REGION": "us", "DEBUG": "1"}},
+	  "retired": 1
+	}`)
+	var paths []string
+	for _, k := range s.UnknownKeys(freeForm{}) {
+		paths = append(paths, k.Path)
+	}
+	if want := []string{"retired"}; strings.Join(paths, ",") != strings.Join(want, ",") {
+		t.Errorf("UnknownKeys = %v, want %v", paths, want)
+	}
+}
