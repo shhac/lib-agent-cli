@@ -103,6 +103,7 @@ func TestOverlayRemovesWhatTheStructCleared(t *testing.T) {
 // but not what is inside one.
 func TestOverlayOwnsMapEntriesButNotTheirContents(t *testing.T) {
 	s := writeStore(t, `{"groups": {
+	  "//core_note": "the people who review everything",
 	  "core": {"review": "approve", "vibes": "good"},
 	  "gone": {"review": "comment"}
 	}}`)
@@ -116,6 +117,9 @@ func TestOverlayOwnsMapEntriesButNotTheirContents(t *testing.T) {
 	}
 	if core := groups["core"].(map[string]any); core["vibes"] != "good" {
 		t.Errorf("an unknown key inside an entry must survive: %+v", core)
+	}
+	if groups["//core_note"] == nil {
+		t.Errorf("a note among the entries is not an entry the struct dropped: %+v", groups)
 	}
 }
 
@@ -339,5 +343,139 @@ func TestUnknownKeysToleratesCorruptAndIgnoresNotes(t *testing.T) {
 	s := writeStore(t, `{"//user_note": "n", "//why": "c", "user": "ada"}`)
 	if got := s.UnknownKeys(&testConfig{}); len(got) != 0 {
 		t.Errorf("annotations are not unknown keys: %v", got)
+	}
+}
+
+type limits struct {
+	Percent int `json:"percent,omitempty"`
+}
+
+type base struct {
+	Limits *limits `json:"limits,omitempty"`
+}
+
+// ptrConfig reaches every level through a shape testConfig does not: a
+// pointer field, a map of pointers, and a field promoted from an embedded
+// struct.
+type ptrConfig struct {
+	base
+	Engine *engine            `json:"engine,omitempty"`
+	Groups map[string]*cohort `json:"groups,omitempty"`
+}
+
+// The schema is found through pointers and embedding exactly as it is through
+// plain fields, so every rule holds one level down whatever the shape.
+func TestOverlayDescendsPointersAndEmbeddedStructs(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		doc   string
+		value ptrConfig
+		path  string
+		want  any // nil means the key must be absent
+	}{
+		{
+			name:  "unknown key under a pointer field survives",
+			doc:   `{"engine": {"bin": "codex", "turbo": true}}`,
+			value: ptrConfig{Engine: &engine{Bin: "codex"}},
+			path:  "engine.turbo", want: true,
+		},
+		{
+			name:  "unknown key inside a pointer map entry survives",
+			doc:   `{"groups": {"core": {"review": "approve", "vibes": "good"}}}`,
+			value: ptrConfig{Groups: map[string]*cohort{"core": {Review: "approve"}}},
+			path:  "groups.core.vibes", want: "good",
+		},
+		{
+			name:  "unknown key under a promoted field survives",
+			doc:   `{"limits": {"percent": 30, "window": "5h"}}`,
+			value: ptrConfig{base: base{Limits: &limits{Percent: 30}}},
+			path:  "limits.window", want: "5h",
+		},
+		{
+			name:  "cleared field under a pointer is removed",
+			doc:   `{"engine": {"bin": "codex", "model": "opus"}}`,
+			value: ptrConfig{Engine: &engine{Bin: "codex"}},
+			path:  "engine.model",
+		},
+		{
+			name:  "cleared field inside a pointer map entry is removed",
+			doc:   `{"groups": {"core": {"review": "approve", "vibes": "good"}}}`,
+			value: ptrConfig{Groups: map[string]*cohort{"core": {}}},
+			path:  "groups.core.review",
+		},
+		{
+			name:  "cleared field under a promoted field is removed",
+			doc:   `{"limits": {"percent": 30, "window": "5h"}}`,
+			value: ptrConfig{base: base{Limits: &limits{}}},
+			path:  "limits.percent",
+		},
+		{
+			name:  "stored scalar replaced by an object",
+			doc:   `{"engine": "codex"}`,
+			value: ptrConfig{Engine: &engine{Bin: "codex"}},
+			path:  "engine.bin", want: "codex",
+		},
+		{
+			name:  "stored scalar entry replaced by an object",
+			doc:   `{"groups": {"core": "approve"}}`,
+			value: ptrConfig{Groups: map[string]*cohort{"core": {Review: "approve"}}},
+			path:  "groups.core.review", want: "approve",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := writeStore(t, tc.doc)
+			if err := s.Save(tc.value); err != nil {
+				t.Fatal(err)
+			}
+			doc := reload(t, s)
+			got, found := lookupPath(doc, strings.Split(tc.path, "."))
+			if tc.want == nil {
+				if found {
+					t.Errorf("%s = %v, want it removed: %+v", tc.path, got, doc)
+				}
+				return
+			}
+			if got != tc.want {
+				t.Errorf("%s = %v, want %v: %+v", tc.path, got, tc.want, doc)
+			}
+		})
+	}
+}
+
+func TestUnknownKeysDescendsPointersAndEmbeddedStructs(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		doc  string
+		want []string
+	}{
+		{
+			name: "pointer field",
+			doc:  `{"engine": {"bin": "codex", "turbo": true}}`,
+			want: []string{"engine.turbo"},
+		},
+		{
+			name: "pointer map entry",
+			doc:  `{"groups": {"core": {"review": "approve", "vibes": "good"}}}`,
+			want: []string{"groups.core.vibes"},
+		},
+		{
+			name: "promoted field",
+			doc:  `{"limits": {"percent": 30, "window": "5h"}, "retired": 1}`,
+			want: []string{"limits.window", "retired"},
+		},
+		{
+			name: "nothing unknown",
+			doc:  `{"limits": {"percent": 30}, "engine": {"bin": "codex"}, "groups": {"core": {}}}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var paths []string
+			for _, k := range writeStore(t, tc.doc).UnknownKeys(&ptrConfig{}) {
+				paths = append(paths, k.Path)
+			}
+			if strings.Join(paths, ",") != strings.Join(tc.want, ",") {
+				t.Errorf("UnknownKeys = %v, want %v", paths, tc.want)
+			}
+		})
 	}
 }
