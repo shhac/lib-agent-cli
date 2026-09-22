@@ -74,16 +74,16 @@ func documentFallback(
 // getUnknown reports a value the wrapper already read, so a get on a stray key
 // parses the document once rather than twice. known_key marks the record as
 // describing something the schema does not model.
-func (o *configOptions) getUnknown(g *Globals) func(*cobra.Command, string, string) error {
+func getUnknown(g *Globals) func(*cobra.Command, string, string) error {
 	return func(cmd *cobra.Command, key, value string) error {
 		return EmitItem(cmd.OutOrStdout(), g.format(),
 			map[string]any{"key": key, "value": value, "set": true, "known_key": false})
 	}
 }
 
-func (o *configOptions) unsetUnknown(g *Globals) func(*cobra.Command, string, string) error {
+func unsetUnknown(g *Globals, store *creds.Store) func(*cobra.Command, string, string) error {
 	return func(cmd *cobra.Command, key, _ string) error {
-		removed, err := o.store.RawDelete(key)
+		removed, err := store.RawDelete(key)
 		if err != nil {
 			return output.Wrap(err, output.FixableByHuman)
 		}

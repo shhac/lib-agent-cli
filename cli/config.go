@@ -137,8 +137,8 @@ func ConfigCommand(g *Globals, keys []ConfigKey, opts ...ConfigOption) *cobra.Co
 		for _, k := range keys {
 			known[k.Name] = true
 		}
-		get.RunE = documentFallback(get.RunE, known, options.store, options.getUnknown(g))
-		unset.RunE = documentFallback(unset.RunE, known, options.store, options.unsetUnknown(g))
+		get.RunE = documentFallback(get.RunE, known, options.store, getUnknown(g))
+		unset.RunE = documentFallback(unset.RunE, known, options.store, unsetUnknown(g, options.store))
 	}
 
 	cfg.AddCommand(get, set, unset, list)
