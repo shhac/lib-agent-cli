@@ -32,9 +32,9 @@ type UnknownKey struct {
 // field for, sorted by path so a report is stable between runs. schema is a
 // prototype of the config struct — its type is what matters, not its values.
 //
-// A missing or unparseable file reports nothing: a document nobody can parse
-// is a different complaint than a key nobody recognises, and Load already
-// treats both as empty.
+// A missing, unreadable or unparseable file reports nothing: a document
+// nobody can read is a different complaint from a key nobody recognises, and
+// Load is where that complaint surfaces.
 //
 // Annotation keys are skipped. They are comments by construction, so the
 // schema deliberately has no field for them and reporting them would make an

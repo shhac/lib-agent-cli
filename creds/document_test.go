@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -498,5 +499,35 @@ func TestUnknownKeysLeavesFreeFormMapsAlone(t *testing.T) {
 	}
 	if want := []string{"retired"}; strings.Join(paths, ",") != strings.Join(want, ",") {
 		t.Errorf("UnknownKeys = %v, want %v", paths, want)
+	}
+}
+
+// Overlay tolerates a document it cannot PARSE, which has nothing left to
+// preserve, but not one it cannot READ: writing the struct's view over that
+// would delete every note and unknown key it holds.
+func TestOverlayRefusesToReplaceAnUnreadableDocument(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits do not make a file unreadable on windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a file whatever its mode")
+	}
+	const doc = `{"//user_note": "who we act as", "user": "ada", "stray": 1}`
+	s := writeStore(t, doc)
+	if err := os.Chmod(s.Path, 0o200); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(testConfig{User: "grace"}); err == nil {
+		t.Error("a save over a document it could not read must fail")
+	}
+	if err := os.Chmod(s.Path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(s.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != doc {
+		t.Errorf("the unreadable document was replaced:\n%s", data)
 	}
 }

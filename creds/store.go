@@ -2,6 +2,7 @@ package creds
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -115,13 +116,29 @@ func (s Store) WithLock(fn func() error) error {
 }
 
 // readDoc is the stored document as the map it literally is. Every caller
-// decides for itself what a missing or unparseable file means.
+// decides for itself what a missing, unreadable or unparseable file means.
 func (s Store) readDoc() (map[string]any, error) {
 	data, err := os.ReadFile(s.Path)
 	if err != nil {
 		return nil, err
 	}
-	return decodeDoc(data)
+	doc, err := decodeDoc(data)
+	if err != nil {
+		return nil, malformedError{err}
+	}
+	return doc, nil
+}
+
+// malformedError is a document that was read but will not parse, kept
+// distinct from a failed read because a save may replace the one and must
+// not replace the other.
+type malformedError struct{ error }
+
+func (e malformedError) Unwrap() error { return e.error }
+
+func isMalformed(err error) bool {
+	var malformed malformedError
+	return errors.As(err, &malformed)
 }
 
 // write is the struct-to-file path shared by Save and Update.
@@ -190,8 +207,11 @@ func writeFileAtomic(path string, data []byte) error {
 // set — v laid over the stored document and ordered for reading.
 //
 // A stored document that will not parse is treated as absent rather than
-// failing the write, matching Load's tolerance of a corrupt file: a config
-// nobody can parse should not also be a config nobody can fix.
+// failing the write: a config nobody can parse should not also be a config
+// nobody can fix, and there is nothing in it to preserve. A file that cannot
+// be READ is another matter. Its notes and unknown keys may be intact, and
+// writing the struct's view over it would delete every one of them, which is
+// the loss Overlay exists to prevent; so that fails the write instead.
 func (s Store) payload(v any) (any, error) {
 	if !s.Overlay {
 		return v, nil
@@ -200,6 +220,9 @@ func (s Store) payload(v any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	stored, _ := s.readDoc()
+	stored, err := s.readDoc()
+	if err != nil && !os.IsNotExist(err) && !isMalformed(err) {
+		return nil, err
+	}
 	return ordered(overlay(stored, fresh, deref(reflect.TypeOf(v)))), nil
 }
