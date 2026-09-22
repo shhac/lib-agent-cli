@@ -3,7 +3,6 @@ package creds
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -41,11 +40,7 @@ type UnknownKey struct {
 // schema deliberately has no field for them and reporting them would make an
 // annotated config warn about itself.
 func (s Store) UnknownKeys(schema any) []UnknownKey {
-	data, err := os.ReadFile(s.Path)
-	if err != nil {
-		return nil
-	}
-	doc, err := decodeDoc(data)
+	doc, err := s.readDoc()
 	if err != nil {
 		return nil
 	}
@@ -60,11 +55,7 @@ func (s Store) UnknownKeys(schema any) []UnknownKey {
 // actually holds — the registry cannot, because it resolves against the keys
 // it knows.
 func (s Store) RawValue(path string) (string, bool) {
-	data, err := os.ReadFile(s.Path)
-	if err != nil {
-		return "", false
-	}
-	doc, err := decodeDoc(data)
+	doc, err := s.readDoc()
 	if err != nil {
 		return "", false
 	}
@@ -85,11 +76,7 @@ func (s Store) RawValue(path string) (string, bool) {
 func (s Store) RawDelete(path string) (bool, error) {
 	var removed bool
 	err := s.WithLock(func() error {
-		data, err := os.ReadFile(s.Path)
-		if err != nil {
-			return err
-		}
-		doc, err := decodeDoc(data)
+		doc, err := s.readDoc()
 		if err != nil {
 			return err
 		}
@@ -98,7 +85,7 @@ func (s Store) RawDelete(path string) (bool, error) {
 		}
 		// doc is already the whole document, so it is written as it stands:
 		// there is no struct view to lay over anything.
-		data, err = encodeDoc(ordered(doc))
+		data, err := encodeDoc(ordered(doc))
 		if err != nil {
 			return err
 		}
@@ -114,7 +101,7 @@ func (s Store) RawDelete(path string) (bool, error) {
 func walkUnknown(doc map[string]any, t reflect.Type, prefix string, found *[]UnknownKey) {
 	fields := jsonFields(t)
 	for key, value := range doc {
-		if strings.HasPrefix(key, notePrefix) {
+		if isNote(key) {
 			continue
 		}
 		path := key

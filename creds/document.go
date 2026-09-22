@@ -53,10 +53,15 @@ const notePrefix = "//"
 // "//model_note" and "//model" pin to "model".
 const noteSuffix = "_note"
 
+// isNote reports whether key is an annotation rather than a setting.
+func isNote(key string) bool {
+	return strings.HasPrefix(key, notePrefix)
+}
+
 // pinnedTo reports the sibling key an annotation documents. A note naming no
 // sibling is commentary on the object rather than a pin.
 func pinnedTo(key string, siblings map[string]any) (string, bool) {
-	if !strings.HasPrefix(key, notePrefix) {
+	if !isNote(key) {
 		return "", false
 	}
 	name := strings.TrimPrefix(key, notePrefix)
@@ -97,7 +102,7 @@ func orderedKeys(obj map[string]any) []string {
 		e := entry{key: key, sortName: key}
 		if target, ok := pinnedTo(key, obj); ok {
 			e.sortName, e.pinned = target, true
-		} else if strings.HasPrefix(key, notePrefix) {
+		} else if isNote(key) {
 			e.loose = true
 		}
 		entries = append(entries, e)
@@ -159,7 +164,7 @@ func overlay(stored, fresh map[string]any, t reflect.Type) map[string]any {
 	// deliberately not copied here: whether it survives is decided below, by
 	// whether the struct still states it.
 	for key, value := range stored {
-		if _, isSchema := fields[key]; isSchema && !strings.HasPrefix(key, notePrefix) {
+		if _, isSchema := fields[key]; isSchema && !isNote(key) {
 			continue
 		}
 		out[key] = value
@@ -207,7 +212,7 @@ func overlayEntries(stored, fresh map[string]any, elem reflect.Type) map[string]
 	// Annotations sit beside the entries they describe. The struct has no
 	// field for one, so it is not an entry the struct dropped.
 	for key, value := range stored {
-		if strings.HasPrefix(key, notePrefix) {
+		if isNote(key) {
 			if _, taken := out[key]; !taken {
 				out[key] = value
 			}

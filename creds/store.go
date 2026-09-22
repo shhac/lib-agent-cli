@@ -114,6 +114,16 @@ func (s Store) WithLock(fn func() error) error {
 	return fn()
 }
 
+// readDoc is the stored document as the map it literally is. Every caller
+// decides for itself what a missing or unparseable file means.
+func (s Store) readDoc() (map[string]any, error) {
+	data, err := os.ReadFile(s.Path)
+	if err != nil {
+		return nil, err
+	}
+	return decodeDoc(data)
+}
+
 // write is the struct-to-file path shared by Save and Update.
 func (s Store) write(v any) error {
 	payload, err := s.payload(v)
@@ -190,9 +200,6 @@ func (s Store) payload(v any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	var stored map[string]any
-	if data, err := os.ReadFile(s.Path); err == nil {
-		stored, _ = decodeDoc(data)
-	}
+	stored, _ := s.readDoc()
 	return ordered(overlay(stored, fresh, deref(reflect.TypeOf(v)))), nil
 }
