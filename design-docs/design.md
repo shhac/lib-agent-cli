@@ -218,3 +218,39 @@ methods that hand a decoded document across. It is `internal` because it is
 an implementation of `Store.Overlay`, not a surface: `creds` converts its
 results into its own exported types (`UnknownKey` is a `creds` struct, not an
 alias), so the package can be reshaped without touching any consuming CLI.
+
+## Typed config keys: a binding, not a config model (September 2026)
+
+`ConfigCommand` took the per-key closures from each CLI, and each CLI wrote the
+same four per key: read the config, render one field, parse and bound-check
+the input, write it back, and put it back on unset. crew-code-review grew
+private builders for this, and the next adopter needed the same thing again.
+
+The builders are mechanism because of what they take. The library never
+learns the config's shape, where it lives or how it is written: a
+`ConfigBinding[C]` supplies `Read`, an `Update` that is the CLI's own writer
+(a locked store, or a request to a running daemon that owns the file), and
+`Default`. The key names, bounds, allowed values and descriptions stay the
+CLI's. What the library owns is only the parse/validate/render/restore step
+between a string on argv and a typed field.
+
+Two decisions the private copies got wrong or could not make:
+
+- **Unset restores the default, not the zero value.** A key bounded at
+  `[1, 10]` that came back as 0 after an unset held a value its own `set`
+  refuses. The binding's `Default()` is the one place a fresh install's
+  values are stated, so unset reads the field from there.
+- **"Set" is a statement about the file when there is one.** Without a
+  document the only test available is "differs from the default", which
+  calls a default somebody deliberately wrote down unset. With `Doc`, a key's
+  name is read as its dotted JSON path and it is set exactly when that path
+  is present; unset also removes the path (through `RawDelete`, under the
+  store lock) so the file stays sparse. That only holds while the struct's
+  encoding omits the default — a field that always marshals is written back
+  by the next save — which is the CLI's schema to decide, not ours.
+
+`JSONKey` validates by decoding strictly into the field's type (unknown
+object fields and trailing data are errors), so a typo in a nested key is
+refused rather than silently dropped. Floats and durations are not builders
+yet — each has one consumer and its own zero-means-what question — and
+`FieldKey` is exported so a CLI can build one without copying the scaffold.

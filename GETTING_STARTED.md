@@ -278,6 +278,8 @@ func settingsStore() creds.Store {
 	return creds.Store{Path: filepath.Join(xdg.ConfigDir(appName), "config.json")}
 }
 
+func defaultSettings() settings { return settings{PageSize: 25} }
+
 func loadSettings() settings {
 	var s settings
 	_ = settingsStore().Load(&s) // missing file → empty, no error
@@ -294,24 +296,64 @@ writes `0600` with parent dirs `0700`; `Store.Load` treats a missing file as
 empty.
 
 Expose get/set/unset/list with `cli.ConfigCommand` — you supply the `Globals`
-(so `--format` is honored) and typed closures per key, the lib owns the cobra
-scaffolding and output. Every verb emits the key's `{key, value, set}` state
-(NDJSON by default; `--format json|yaml` gives the bare object, or a
-`{"data":[…]}` envelope for `list`):
+(so `--format` is honored) and a `ConfigKey` per key, the lib owns the cobra
+scaffolding, output and shell completion. Every verb emits the key's
+`{key, value, set}` state (NDJSON by default; `--format json|yaml` gives the
+bare object, or a `{"data":[…]}` envelope for `list`).
+
+Build the keys with the typed builders rather than writing each key's
+Get/Set/Unset closures. A `ConfigBinding` says once how to read the config, how
+to change it (your own writer — a locked store here, or a request to a running
+daemon), and what its defaults are; each builder then takes the binding, the
+key name, a description and a field accessor:
 
 ```go
-func configKeys() []libcli.ConfigKey {
-	return []libcli.ConfigKey{
-		{
-			Name:        "default_workspace",
-			Description: "Workspace used when none is given",
-			Get:   func() (string, bool) { s := loadSettings(); return s.DefaultWorkspace, s.DefaultWorkspace != "" },
-			Set:   func(v string) error { s := loadSettings(); s.DefaultWorkspace = v; return saveSettings(s) },
-			Unset: func() error { s := loadSettings(); s.DefaultWorkspace = ""; return saveSettings(s) },
+func settingsBinding() libcli.ConfigBinding[settings] {
+	store := settingsStore()
+	return libcli.ConfigBinding[settings]{
+		Read: func() (settings, error) { s := defaultSettings(); return s, store.Load(&s) },
+		Update: func(change func(*settings) error) error {
+			var s settings
+			return store.Update(&s, func() error { return change(&s) })
 		},
+		Default: defaultSettings,
+		Doc:     &store, // optional: "set" = present in the file; unset removes the key
+	}
+}
+
+func configKeys() []libcli.ConfigKey {
+	b := settingsBinding()
+	return []libcli.ConfigKey{
+		libcli.StringKey(b, "default_workspace", "Workspace used when none is given",
+			func(s *settings) *string { return &s.DefaultWorkspace }, nil),
+		libcli.IntKey(b, "page_size", "Items per page (1-100)",
+			func(s *settings) *int { return &s.PageSize }, 1, 100),
 	}
 }
 ```
+
+| Builder | Field | Accepts |
+|---|---|---|
+| `StringKey(b, name, desc, field, validate)` | `string` | anything `validate` (may be nil) allows |
+| `OneOfKey(b, name, desc, field, values)` | `string` | one of `values`, also offered as completions |
+| `IntKey(b, name, desc, field, min, max)` | `int` | an integer in `[min, max]` |
+| `OptionalIntKey(b, name, desc, field, min, max)` | `*int` | as `IntKey`; nil is "the coded default" |
+| `OptionalBoolKey(b, name, desc, field)` | `*bool` | `true`/`false` |
+| `JSONKey(b, name, desc, field, validate)` | any `T` | JSON that decodes strictly into `T` (no unknown fields) |
+| `PathKey(b, name, desc, field)` | `string` | an absolute path, or empty |
+| `EnvNameKey(b, name, desc, field)` | `string` | an environment variable name, or empty |
+
+`FieldKey(b, name, desc, field, parse, format)` is the scaffold under them, for
+a type they do not cover (a duration, a float). Semantics shared by all of
+them: `set` parses and validates before calling `Update`; `unset` restores the
+field to `Default()`'s value, never the zero value; `get` reports `set` as
+"present in the file" when `Doc` is given (the key name is read as the field's
+dotted JSON path, e.g. `engines.claude.floor`) and "differs from `Default()`"
+otherwise. With `Doc`, unset also removes the path from the file, which keeps
+it sparse as long as your struct omits the default when it saves.
+
+A hand-written `ConfigKey` still works beside them; set its `Values` to offer
+completions for `set`.
 
 A `nil` `Set` marks a key read-only; a `nil` `Unset` makes it un-clearable.
 Unknown keys produce a `fixable_by: agent` error listing the valid ones.

@@ -23,7 +23,7 @@ survey it came from, and the shared-vs-domain boundary per piece.
 | `xdg/` | freedesktop dirs `ConfigDir`/`CacheDir`/`DataDir`/`StateDir`/`RuntimeDir` (spec env vars + fallbacks when unset) (+ `App{Name}` bundle) |
 | `creds/` | `Store` (0600 JSON, opt-in `Overlay` for annotated configs; `UnknownKeys`/`RawValue`/`RawDelete` for what the schema cannot see), `Keychain` (macOS `security`), `FirstNonEmpty`/`FirstNonZero`/`Getenv` |
 | `internal/jsondoc/` | the pure document algebra behind `Overlay`: the `"//"` note convention and layout, the schema-aware merge, and the unknown-key walk. No filesystem, no secrets |
-| `cli/` | `NewRoot`+`Options`/`Globals`, `ConfigCommand` (+`WithDocument`/`SectionKey`), `RequireConfirm`/`AddConfirmFlag`, `HandleUnknownCommand`, `Run` |
+| `cli/` | `NewRoot`+`Options`/`Globals`, `ConfigCommand` (+`WithDocument`/`SectionKey`, and the typed key builders over a `ConfigBinding`), `RequireConfirm`/`AddConfirmFlag`, `HandleUnknownCommand`, `Run` |
 | `dialog/` | `Prompter`/`PromptSecret`/`Prompt`/`Available` + neutral `Category`/`ClassifyError` — the `--form` native secret dialog (zenity); no lib-agent-output coupling |
 | `examples/demo/` | the kitchen-sink CLI exercising every package; built + driven by `demo_test.go` |
 
