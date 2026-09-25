@@ -21,6 +21,9 @@ type ConfigKey struct {
 	Set func(value string) error
 	// Unset clears the key back to its default; a nil Unset marks it un-clearable.
 	Unset func() error
+	// Values, when non-empty, are the values `set` offers as shell
+	// completions. They are candidates, not a constraint: Set still decides.
+	Values []string
 }
 
 // ConfigCommand builds a `config` command group with get/set/unset/list over the
@@ -31,6 +34,10 @@ type ConfigKey struct {
 // default, the bare object (get/set/unset) or {"data":[…]} envelope (list)
 // under json|yaml. A nil g always emits NDJSON. Unknown keys produce a
 // fixable_by:agent error listing the valid ones.
+//
+// Shell completion offers key names to get, set and unset, and a key's Values
+// for set's second argument. A CLI that wants richer completion (directories,
+// values read from elsewhere) replaces the subcommand's ValidArgsFunction.
 func ConfigCommand(g *Globals, keys []ConfigKey, opts ...ConfigOption) *cobra.Command {
 	var options configOptions
 	for _, opt := range opts {
@@ -141,8 +148,41 @@ func ConfigCommand(g *Globals, keys []ConfigKey, opts ...ConfigOption) *cobra.Co
 		unset.RunE = documentFallback(unset.RunE, known, options, unsetFromDocument(g, options.store))
 	}
 
+	completeName := completeKeyNames(names)
+	get.ValidArgsFunction = completeName
+	unset.ValidArgsFunction = completeName
+	set.ValidArgsFunction = func(cmd *cobra.Command, args []string, prefix string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return completeName(cmd, args, prefix)
+		}
+		if len(args) == 1 {
+			return withPrefix(byName[args[0]].Values, prefix), cobra.ShellCompDirectiveNoFileComp
+		}
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
 	cfg.AddCommand(get, set, unset, list)
 	return cfg
+}
+
+// completeKeyNames completes the one key argument get and unset take.
+func completeKeyNames(names []string) cobra.CompletionFunc {
+	return func(_ *cobra.Command, args []string, prefix string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return withPrefix(names, prefix), cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
+func withPrefix(values []string, prefix string) []string {
+	var matches []string
+	for _, v := range values {
+		if strings.HasPrefix(v, prefix) {
+			matches = append(matches, v)
+		}
+	}
+	return matches
 }
 
 // format is nil-safe so ConfigCommand can take an optional *Globals — a CLI

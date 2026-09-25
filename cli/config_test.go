@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -120,5 +121,42 @@ func TestConfigCommandHonorsFormat(t *testing.T) {
 	g.Format = "bogus"
 	if err := get.RunE(get, []string{"k"}); err == nil {
 		t.Error("bogus format should error")
+	}
+}
+
+func TestConfigCommandCompletesKeysAndValues(t *testing.T) {
+	cmd := ConfigCommand(nil, []ConfigKey{
+		{Name: "name"},
+		{Name: "mode", Values: []string{"fast", "slow"}},
+	})
+	complete := func(sub string, args []string, prefix string) []string {
+		c := findSub(cmd, sub)
+		got, directive := c.ValidArgsFunction(c, args, prefix)
+		if directive != cobra.ShellCompDirectiveNoFileComp {
+			t.Errorf("%s %v: directive %v", sub, args, directive)
+		}
+		return got
+	}
+
+	if got := complete("set", nil, "m"); !slices.Equal(got, []string{"mode"}) {
+		t.Errorf("set key completion = %v", got)
+	}
+	if got := complete("set", []string{"mode"}, ""); !slices.Equal(got, []string{"fast", "slow"}) {
+		t.Errorf("set value completion = %v", got)
+	}
+	if got := complete("set", []string{"mode"}, "s"); !slices.Equal(got, []string{"slow"}) {
+		t.Errorf("set value completion by prefix = %v", got)
+	}
+	if got := complete("set", []string{"name"}, ""); got != nil {
+		t.Errorf("a key without Values should offer nothing, got %v", got)
+	}
+	if got := complete("set", []string{"nope"}, ""); got != nil {
+		t.Errorf("an unknown key should offer nothing, got %v", got)
+	}
+	if got := complete("get", nil, ""); !slices.Equal(got, []string{"mode", "name"}) {
+		t.Errorf("get completion = %v", got)
+	}
+	if got := complete("unset", []string{"mode"}, ""); got != nil {
+		t.Errorf("unset takes one key, got %v", got)
 	}
 }
