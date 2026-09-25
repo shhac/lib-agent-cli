@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/shhac/lib-agent-cli/cli"
 	"github.com/shhac/lib-agent-cli/creds"
@@ -68,36 +67,36 @@ func main() {
 	cli.Run(root)
 }
 
+// settingsBinding is how the typed config keys reach the settings: reads layer
+// the file over the defaults, writes go through the store's locked Update, and
+// Doc makes "set" mean "written in the file" (so unset also removes the key).
+func settingsBinding() cli.ConfigBinding[settings] {
+	store := settingsStore()
+	return cli.ConfigBinding[settings]{
+		Read: func() (settings, error) {
+			s := defaultSettings()
+			return s, store.Load(&s)
+		},
+		Update: func(change func(*settings) error) error {
+			var s settings
+			return store.Update(&s, func() error { return change(&s) })
+		},
+		Default: defaultSettings,
+		Doc:     &store,
+	}
+}
+
+func defaultSettings() settings { return settings{PageSize: defaultPageSize} }
+
+const defaultPageSize = 25
+
 func configKeys() []cli.ConfigKey {
+	b := settingsBinding()
 	return []cli.ConfigKey{
-		{
-			Name:        "default_account",
-			Description: "Account used when none is given",
-			Get:         func() (string, bool) { s := loadSettings(); return s.DefaultAccount, s.DefaultAccount != "" },
-			Set:         func(v string) error { s := loadSettings(); s.DefaultAccount = v; return saveSettings(s) },
-			Unset:       func() error { s := loadSettings(); s.DefaultAccount = ""; return saveSettings(s) },
-		},
-		{
-			Name:        "page_size",
-			Description: "Default items per page (1-100)",
-			Get: func() (string, bool) {
-				s := loadSettings()
-				if s.PageSize == 0 {
-					return "", false
-				}
-				return strconv.Itoa(s.PageSize), true
-			},
-			Set: func(v string) error {
-				n, err := strconv.Atoi(v)
-				if err != nil || n < 1 || n > 100 {
-					return fmt.Errorf("page_size must be an integer in 1..100")
-				}
-				s := loadSettings()
-				s.PageSize = n
-				return saveSettings(s)
-			},
-			Unset: func() error { s := loadSettings(); s.PageSize = 0; return saveSettings(s) },
-		},
+		cli.StringKey(b, "default_account", "Account used when none is given",
+			func(s *settings) *string { return &s.DefaultAccount }, nil),
+		cli.IntKey(b, "page_size", "Default items per page (1-100)",
+			func(s *settings) *int { return &s.PageSize }, 1, 100),
 	}
 }
 
@@ -177,7 +176,7 @@ func itemListCmd() *cobra.Command {
 		Use:   "item-list",
 		Short: "List demo items (page size: --limit > config page_size > 25)",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			pageSize := creds.FirstNonZero(limit, loadSettings().PageSize, 25)
+			pageSize := creds.FirstNonZero(limit, loadSettings().PageSize, defaultPageSize)
 			const total = 8
 			n := pageSize
 			if n > total {

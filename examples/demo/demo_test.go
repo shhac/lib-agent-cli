@@ -46,6 +46,10 @@ func TestDemoEndToEnd(t *testing.T) {
 	if out, _, _ := run("config", "get", "page_size"); !strings.Contains(out, `"value":"5"`) {
 		t.Errorf("config get: %s", out)
 	}
+	if out, _, _ := run("config", "unset", "page_size"); !strings.Contains(out, `"value":"25"`) || !strings.Contains(out, `"set":false`) {
+		t.Errorf("config unset should restore the default and leave the key unset: %s", out)
+	}
+	run("config", "set", "page_size", "5")
 	if _, se, code := run("config", "set", "page_size", "999"); code != 1 || !strings.Contains(se, `"fixable_by":"agent"`) {
 		t.Errorf("page_size validation: code=%d se=%s", code, se)
 	}
